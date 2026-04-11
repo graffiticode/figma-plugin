@@ -32,7 +32,6 @@
   <script>
     const AUTH_URL = 'https://auth.graffiticode.org';
     const CONSOLE_API_URL = 'https://console.graffiticode.org/api';
-    const GC_API_URL = 'https://api.graffiticode.org';
     const FIREBASE_API_KEY = 'AIzaSyAoVuUNi8ElnS7cn6wc3D8XExML-URLw0I';
 
     const apiKeyInput = document.getElementById('api-key');
@@ -85,8 +84,8 @@
       return cachedToken;
     }
 
-    async function getTaskId(token, itemId) {
-      const query = `query GetItem($id: String!) { item(id: $id) { taskId } }`;
+    async function getItemData(token, itemId) {
+      const query = `query GetItemData($id: String!) { itemData(id: $id) }`;
       const resp = await fetch(CONSOLE_API_URL, {
         method: 'POST',
         headers: {
@@ -96,31 +95,13 @@
         body: JSON.stringify({ query, variables: { id: itemId } }),
       });
       if (!resp.ok) {
-        throw new Error('Failed to fetch item');
+        throw new Error('Failed to fetch item data');
       }
       const result = await resp.json();
       if (result.errors?.length > 0) {
         throw new Error(result.errors[0].message);
       }
-      const taskId = result.data?.item?.taskId;
-      if (!taskId) {
-        throw new Error('Item not found');
-      }
-      return taskId;
-    }
-
-    async function getData(token, taskId) {
-      const url = GC_API_URL + '/data?id=' + encodeURIComponent(taskId) +
-        '&access_token=' + encodeURIComponent(token);
-      const resp = await fetch(url);
-      if (!resp.ok) {
-        throw new Error('Failed to fetch data (' + resp.status + ')');
-      }
-      const result = await resp.json();
-      if (result.status !== 'success') {
-        throw new Error('API error: ' + (result.error?.message || 'unknown'));
-      }
-      return result.data;
+      return JSON.parse(result.data.itemData);
     }
 
     drawBtn.addEventListener('click', async () => {
@@ -145,11 +126,8 @@
       try {
         const token = await getIdToken(apiKey);
 
-        status.textContent = 'Looking up item...';
-        const taskId = await getTaskId(token, itemId);
-
         status.textContent = 'Fetching data...';
-        const data = await getData(token, taskId);
+        const data = await getItemData(token, itemId);
         const source = data?._ ?? data;
 
         parent.postMessage({ pluginMessage: { type: 'draw', data: source } }, '*');
