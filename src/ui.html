@@ -25,7 +25,7 @@
   <label for="item-id">Item ID</label>
   <input type="text" id="item-id" placeholder="e.g. 2FGK3MRsba" />
 
-  <button id="draw-btn">Draw</button>
+  <button id="draw-btn">Watch</button>
 
   <div id="status"></div>
 
@@ -33,11 +33,15 @@
     const AUTH_URL = 'https://auth.graffiticode.org';
     const CONSOLE_API_URL = 'https://console.graffiticode.org/api';
     const FIREBASE_API_KEY = 'AIzaSyAoVuUNi8ElnS7cn6wc3D8XExML-URLw0I';
+    const POLL_INTERVAL = 3000;
 
     const apiKeyInput = document.getElementById('api-key');
     const itemIdInput = document.getElementById('item-id');
     const drawBtn = document.getElementById('draw-btn');
     const status = document.getElementById('status');
+
+    let pollTimer = null;
+    let lastDataJson = null;
 
     let cachedToken = null;
     let tokenExpiresAt = 0;
@@ -104,7 +108,42 @@
       return JSON.parse(result.data.itemData);
     }
 
+    function stopPolling() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      lastDataJson = null;
+      drawBtn.textContent = 'Watch';
+      apiKeyInput.disabled = false;
+      itemIdInput.disabled = false;
+    }
+
+    async function fetchAndDraw() {
+      try {
+        const token = await getIdToken(apiKeyInput.value.trim());
+        const data = await getItemData(token, itemIdInput.value.trim());
+        const source = data?._ ?? data;
+        const json = JSON.stringify(source);
+        if (json !== lastDataJson) {
+          lastDataJson = json;
+          parent.postMessage({ pluginMessage: { type: 'draw', data: source } }, '*');
+        }
+      } catch (err) {
+        status.className = 'error';
+        status.textContent = 'Error: ' + err.message;
+        stopPolling();
+      }
+    }
+
     drawBtn.addEventListener('click', async () => {
+      if (pollTimer) {
+        stopPolling();
+        status.className = '';
+        status.textContent = '';
+        return;
+      }
+
       const apiKey = apiKeyInput.value.trim();
       const itemId = itemIdInput.value.trim();
 
@@ -119,36 +158,35 @@
         return;
       }
 
-      drawBtn.disabled = true;
+      parent.postMessage({ pluginMessage: { type: 'save', apiKey, itemId } }, '*');
+
+      drawBtn.textContent = 'Stop';
+      apiKeyInput.disabled = true;
+      itemIdInput.disabled = true;
       status.className = '';
-      status.textContent = 'Authenticating...';
+      status.textContent = 'Watching for changes...';
 
-      try {
-        const token = await getIdToken(apiKey);
-
-        status.textContent = 'Fetching data...';
-        const data = await getItemData(token, itemId);
-        const source = data?._ ?? data;
-
-        parent.postMessage({ pluginMessage: { type: 'draw', data: source } }, '*');
-      } catch (err) {
-        status.className = 'error';
-        status.textContent = 'Error: ' + err.message;
-        drawBtn.disabled = false;
-      }
+      await fetchAndDraw();
+      pollTimer = setInterval(fetchAndDraw, POLL_INTERVAL);
     });
 
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (!msg) return;
-      drawBtn.disabled = false;
+
+      if (msg.type === 'init') {
+        if (msg.apiKey) { apiKeyInput.value = msg.apiKey; }
+        if (msg.itemId) { itemIdInput.value = msg.itemId; }
+        return;
+      }
 
       if (msg.type === 'draw-complete') {
         status.className = 'success';
-        status.textContent = 'Created ' + msg.count + ' ellipse(s).';
+        status.textContent = 'Watching \u2014 ' + msg.count + ' item(s) drawn.';
       } else if (msg.type === 'error') {
         status.className = 'error';
         status.textContent = msg.message;
+        stopPolling();
       }
     };
   </script>

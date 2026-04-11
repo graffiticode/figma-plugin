@@ -36,7 +36,7 @@ function resolveColor(color: string): RGB {
 
 // --- Ellipses renderer ---
 
-function drawEllipses(data: { ellipses: any[] }): number {
+async function drawEllipses(data: { ellipses: any[] }): Promise<number> {
   const existing = figma.currentPage.findAll(
     n => n.getPluginData('source') === 'graffiticode'
   );
@@ -77,15 +77,6 @@ function drawEllipses(data: { ellipses: any[] }): number {
     ellipse.setPluginData('source', 'graffiticode');
     created.push(ellipse);
 
-    const labelText = item.label || item.name;
-    if (labelText) {
-      const sticky = figma.createSticky();
-      sticky.text.characters = String(labelText);
-      sticky.x = ellipse.x + w / 2 - 50;
-      sticky.y = ellipse.y + h + 10;
-      sticky.setPluginData('source', 'graffiticode');
-      created.push(sticky);
-    }
   }
 
   if (created.length > 0) {
@@ -97,7 +88,7 @@ function drawEllipses(data: { ellipses: any[] }): number {
 
 // --- Renderer registry ---
 
-type Renderer = (data: any) => number;
+type Renderer = (data: any) => Promise<number>;
 
 function getRenderer(data: any): Renderer | null {
   if (data.ellipses) {
@@ -110,8 +101,19 @@ function getRenderer(data: any): Renderer | null {
 
 figma.showUI(__html__, { width: 320, height: 300 });
 
-figma.ui.onmessage = (msg: { type: string; data?: any }) => {
-  if (msg.type === 'draw') {
+// Load saved credentials and send to UI
+Promise.all([
+  figma.clientStorage.getAsync('apiKey'),
+  figma.clientStorage.getAsync('itemId'),
+]).then(([apiKey, itemId]) => {
+  figma.ui.postMessage({ type: 'init', apiKey: apiKey || '', itemId: itemId || '' });
+});
+
+figma.ui.onmessage = async (msg: { type: string; data?: any; apiKey?: string; itemId?: string }) => {
+  if (msg.type === 'save') {
+    if (msg.apiKey) { figma.clientStorage.setAsync('apiKey', msg.apiKey); }
+    if (msg.itemId) { figma.clientStorage.setAsync('itemId', msg.itemId); }
+  } else if (msg.type === 'draw') {
     const renderer = getRenderer(msg.data);
     if (!renderer) {
       figma.ui.postMessage({
@@ -120,7 +122,7 @@ figma.ui.onmessage = (msg: { type: string; data?: any }) => {
       });
       return;
     }
-    const count = renderer(msg.data);
+    const count = await renderer(msg.data);
     figma.ui.postMessage({ type: 'draw-complete', count });
   }
 };
