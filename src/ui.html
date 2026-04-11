@@ -19,26 +19,119 @@
 <body>
   <h2>Graffiticode</h2>
 
+  <label for="api-key">API Key</label>
+  <input type="password" id="api-key" placeholder="Graffiticode API key" />
+
   <label for="item-id">Item ID</label>
   <input type="text" id="item-id" placeholder="e.g. 2FGK3MRsba" />
-
-  <label for="access-token">Access Token</label>
-  <input type="text" id="access-token" placeholder="Bearer token" />
 
   <button id="draw-btn">Draw</button>
 
   <div id="status"></div>
 
   <script>
+    const AUTH_URL = 'https://auth.graffiticode.org';
+    const CONSOLE_API_URL = 'https://console.graffiticode.org/api';
+    const GC_API_URL = 'https://api.graffiticode.org';
+    const FIREBASE_API_KEY = 'AIzaSyAoVuUNi8ElnS7cn6wc3D8XExML-URLw0I';
+
+    const apiKeyInput = document.getElementById('api-key');
     const itemIdInput = document.getElementById('item-id');
-    const tokenInput = document.getElementById('access-token');
     const drawBtn = document.getElementById('draw-btn');
     const status = document.getElementById('status');
 
-    drawBtn.addEventListener('click', async () => {
-      const itemId = itemIdInput.value.trim();
-      const token = tokenInput.value.trim();
+    let cachedToken = null;
+    let tokenExpiresAt = 0;
 
+    async function getIdToken(apiKey) {
+      const now = Date.now();
+      if (cachedToken && tokenExpiresAt > now + 5 * 60 * 1000) {
+        return cachedToken;
+      }
+
+      // Step 1: Exchange API key for Firebase custom token
+      const authResp = await fetch(AUTH_URL + '/authenticate/api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: apiKey }),
+      });
+      if (!authResp.ok) {
+        throw new Error('Invalid API key');
+      }
+      const authData = await authResp.json();
+      if (authData.status !== 'success' || !authData.data?.firebaseCustomToken) {
+        throw new Error('Authentication failed');
+      }
+
+      // Step 2: Exchange custom token for Firebase ID token
+      const idResp = await fetch(
+        'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=' + FIREBASE_API_KEY,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: authData.data.firebaseCustomToken, returnSecureToken: true }),
+        }
+      );
+      if (!idResp.ok) {
+        throw new Error('Token exchange failed');
+      }
+      const idData = await idResp.json();
+      if (!idData.idToken) {
+        throw new Error('No ID token returned');
+      }
+
+      cachedToken = idData.idToken;
+      tokenExpiresAt = now + 55 * 60 * 1000;
+      return cachedToken;
+    }
+
+    async function getTaskId(token, itemId) {
+      const query = `query GetItem($id: String!) { item(id: $id) { taskId } }`;
+      const resp = await fetch(CONSOLE_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query, variables: { id: itemId } }),
+      });
+      if (!resp.ok) {
+        throw new Error('Failed to fetch item');
+      }
+      const result = await resp.json();
+      if (result.errors?.length > 0) {
+        throw new Error(result.errors[0].message);
+      }
+      const taskId = result.data?.item?.taskId;
+      if (!taskId) {
+        throw new Error('Item not found');
+      }
+      return taskId;
+    }
+
+    async function getData(token, taskId) {
+      const url = GC_API_URL + '/data?id=' + encodeURIComponent(taskId) +
+        '&access_token=' + encodeURIComponent(token);
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        throw new Error('Failed to fetch data (' + resp.status + ')');
+      }
+      const result = await resp.json();
+      if (result.status !== 'success') {
+        throw new Error('API error: ' + (result.error?.message || 'unknown'));
+      }
+      return result.data;
+    }
+
+    drawBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      const itemId = itemIdInput.value.trim();
+
+      if (!apiKey) {
+        status.className = 'error';
+        status.textContent = 'Please enter an API key.';
+        return;
+      }
       if (!itemId) {
         status.className = 'error';
         status.textContent = 'Please enter an item ID.';
@@ -47,21 +140,22 @@
 
       drawBtn.disabled = true;
       status.className = '';
-      status.textContent = 'Fetching...';
+      status.textContent = 'Authenticating...';
 
       try {
-        const url = `https://api.graffiticode.org/data?id=${encodeURIComponent(itemId)}` +
-          (token ? `&access_token=${encodeURIComponent(token)}` : '');
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          throw new Error(`API returned ${resp.status}`);
-        }
-        const data = await resp.json();
+        const token = await getIdToken(apiKey);
+
+        status.textContent = 'Looking up item...';
+        const taskId = await getTaskId(token, itemId);
+
+        status.textContent = 'Fetching data...';
+        const data = await getData(token, taskId);
         const source = data?._ ?? data;
+
         parent.postMessage({ pluginMessage: { type: 'draw', data: source } }, '*');
       } catch (err) {
         status.className = 'error';
-        status.textContent = `Error: ${err.message}`;
+        status.textContent = 'Error: ' + err.message;
         drawBtn.disabled = false;
       }
     });
@@ -73,7 +167,7 @@
 
       if (msg.type === 'draw-complete') {
         status.className = 'success';
-        status.textContent = `Created ${msg.count} ellipse(s).`;
+        status.textContent = 'Created ' + msg.count + ' ellipse(s).';
       } else if (msg.type === 'error') {
         status.className = 'error';
         status.textContent = msg.message;

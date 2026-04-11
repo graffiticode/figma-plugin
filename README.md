@@ -21,11 +21,13 @@ npm run build
 ## Using the plugin
 
 1. Run the plugin from **Plugins > Development > Graffiticode**
-2. Enter a Graffiticode **Item ID** (e.g. `2FGK3MRsba`)
-3. Enter your **Access Token** (optional for public items)
+2. Enter your Graffiticode **API Key**
+3. Enter a Graffiticode **Item ID** (e.g. `2FGK3MRsba`)
 4. Click **Draw**
 
-The plugin fetches the compiled data from `api.graffiticode.org`, detects the data shape, and creates the corresponding FigJam nodes. The viewport scrolls and zooms to frame the result.
+The plugin authenticates with the Graffiticode API, fetches the compiled data, detects the data shape, and creates the corresponding FigJam nodes. The viewport scrolls and zooms to frame the result.
+
+The API key is exchanged for a Firebase ID token (cached for 55 minutes). The item ID is resolved to a task ID via the console GraphQL API, then compiled data is fetched from the Graffiticode data API.
 
 ### What happens on Draw
 

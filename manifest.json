@@ -6,6 +6,11 @@
   "ui": "dist/ui.html",
   "editorType": ["figjam"],
   "networkAccess": {
-    "allowedDomains": ["https://api.graffiticode.org"]
+    "allowedDomains": [
+      "https://api.graffiticode.org",
+      "https://auth.graffiticode.org",
+      "https://console.graffiticode.org",
+      "https://identitytoolkit.googleapis.com"
+    ]
   }
 }
