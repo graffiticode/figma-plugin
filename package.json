@@ -1,0 +1,14 @@
+{
+  "name": "graffiticode-figma-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:code && npm run build:ui",
+    "build:code": "tsc --project tsconfig.json",
+    "build:ui": "cp src/ui.html dist/ui.html"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.100.0",
+    "typescript": "^5.4.0"
+  }
+}
