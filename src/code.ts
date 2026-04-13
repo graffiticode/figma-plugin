@@ -138,6 +138,8 @@ figma.clientStorage.getAsync('apiKey').then((apiKey) => {
 figma.ui.onmessage = async (msg: any) => {
   if (msg.type === 'save-api-key') {
     if (msg.apiKey) { figma.clientStorage.setAsync('apiKey', msg.apiKey); }
+  } else if (msg.type === 'clear-api-key') {
+    figma.clientStorage.deleteAsync('apiKey');
   } else if (msg.type === 'save-items') {
     saveItems(msg.items || []);
   } else if (msg.type === 'remove-item-nodes') {

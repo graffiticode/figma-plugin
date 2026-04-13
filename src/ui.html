@@ -15,6 +15,8 @@
     button.small { padding: 6px 10px; font-size: 12px; }
     button.ghost { background: transparent; color: #888; padding: 4px 8px; }
     button.ghost:hover { background: #f3f3f3; color: #dc2626; }
+    button.danger { background: #dc2626; color: white; padding: 4px 8px; font-size: 12px; }
+    button.danger:hover { background: #b91c1c; }
     .add-row { display: flex; gap: 6px; margin-bottom: 12px; }
     .add-row input { margin-bottom: 0; }
     .items { list-style: none; margin-bottom: 12px; max-height: 180px; overflow-y: auto; }
@@ -30,8 +32,17 @@
 <body>
   <h2>Graffiticode</h2>
 
-  <label for="api-key">API Key</label>
-  <input type="password" id="api-key" placeholder="Graffiticode API key" />
+  <label>API Key</label>
+  <div id="api-key-row" style="margin-bottom: 12px;">
+    <div id="api-key-input-row" style="display: flex; gap: 6px;">
+      <input type="password" id="api-key" placeholder="Graffiticode API key" style="margin-bottom: 0;" />
+      <button id="set-key-btn" class="small">Set</button>
+    </div>
+    <div id="api-key-set" style="display: none; align-items: center; justify-content: space-between; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+      <span style="color: #16a34a;">&#10003; API key set</span>
+      <span id="api-key-actions" style="display: flex; gap: 4px;"></span>
+    </div>
+  </div>
 
   <label>Items</label>
   <div class="add-row">
@@ -51,6 +62,10 @@
     const POLL_INTERVAL = 3000;
 
     const apiKeyInput = document.getElementById('api-key');
+    const apiKeyInputRow = document.getElementById('api-key-input-row');
+    const apiKeySet = document.getElementById('api-key-set');
+    const apiKeyActions = document.getElementById('api-key-actions');
+    const setKeyBtn = document.getElementById('set-key-btn');
     const newItemInput = document.getElementById('new-item-id');
     const addBtn = document.getElementById('add-btn');
     const itemsEl = document.getElementById('items');
@@ -58,8 +73,68 @@
     const status = document.getElementById('status');
 
     let items = []; // [{id, checked}]
+    let storedApiKey = '';
     let pollTimer = null;
     const lastDataJson = {}; // itemId -> json
+
+    function setApiKeyDisplay(key) {
+      storedApiKey = key || '';
+      if (storedApiKey) {
+        apiKeyInputRow.style.display = 'none';
+        apiKeyInput.value = '';
+        apiKeySet.style.display = 'flex';
+        showClearDefault();
+      } else {
+        apiKeyInputRow.style.display = 'flex';
+        apiKeySet.style.display = 'none';
+      }
+    }
+
+    function showClearDefault() {
+      apiKeyActions.innerHTML = '';
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'ghost small';
+      clearBtn.textContent = 'Clear';
+      clearBtn.disabled = !!pollTimer;
+      clearBtn.addEventListener('click', showClearConfirm);
+      apiKeyActions.appendChild(clearBtn);
+    }
+
+    function showClearConfirm() {
+      apiKeyActions.innerHTML = '';
+      const confirmBtn = document.createElement('button');
+      confirmBtn.className = 'danger small';
+      confirmBtn.textContent = 'Clear';
+      confirmBtn.addEventListener('click', () => {
+        parent.postMessage({ pluginMessage: { type: 'clear-api-key' } }, '*');
+        cachedToken = null;
+        tokenExpiresAt = 0;
+        setApiKeyDisplay('');
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'ghost small';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', showClearDefault);
+      apiKeyActions.appendChild(confirmBtn);
+      apiKeyActions.appendChild(cancelBtn);
+    }
+
+    setKeyBtn.addEventListener('click', () => {
+      const key = apiKeyInput.value.trim();
+      if (!key) {
+        status.className = 'error';
+        status.textContent = 'Please enter an API key.';
+        return;
+      }
+      parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey: key } }, '*');
+      setApiKeyDisplay(key);
+      status.className = '';
+      status.textContent = '';
+    });
+
+    apiKeyInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') setKeyBtn.click();
+    });
 
     let cachedToken = null;
     let tokenExpiresAt = 0;
@@ -87,6 +162,10 @@
         cb.disabled = !!pollTimer;
         cb.addEventListener('change', () => {
           items[idx].checked = cb.checked;
+          if (!cb.checked) {
+            delete lastDataJson[item.id];
+            parent.postMessage({ pluginMessage: { type: 'remove-item-nodes', itemId: item.id } }, '*');
+          }
           persistItems();
         });
 
@@ -94,22 +173,46 @@
         label.className = 'item-id';
         label.textContent = item.id;
 
-        const del = document.createElement('button');
-        del.className = 'ghost small';
-        del.textContent = '\u00d7';
-        del.title = 'Remove';
-        del.disabled = !!pollTimer;
-        del.addEventListener('click', () => {
-          const removed = items.splice(idx, 1)[0];
-          delete lastDataJson[removed.id];
-          parent.postMessage({ pluginMessage: { type: 'remove-item-nodes', itemId: removed.id } }, '*');
-          persistItems();
-          renderItems();
-        });
+        const actions = document.createElement('span');
+        actions.style.display = 'flex';
+        actions.style.gap = '4px';
+
+        function showDefault() {
+          actions.innerHTML = '';
+          const del = document.createElement('button');
+          del.className = 'ghost small';
+          del.textContent = '\u00d7';
+          del.title = 'Remove';
+          del.disabled = !!pollTimer;
+          del.addEventListener('click', showConfirm);
+          actions.appendChild(del);
+        }
+
+        function showConfirm() {
+          actions.innerHTML = '';
+          const confirmBtn = document.createElement('button');
+          confirmBtn.className = 'danger small';
+          confirmBtn.textContent = 'Delete';
+          confirmBtn.addEventListener('click', () => {
+            const removed = items.splice(idx, 1)[0];
+            delete lastDataJson[removed.id];
+            parent.postMessage({ pluginMessage: { type: 'remove-item-nodes', itemId: removed.id } }, '*');
+            persistItems();
+            renderItems();
+          });
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'ghost small';
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.addEventListener('click', showDefault);
+          actions.appendChild(confirmBtn);
+          actions.appendChild(cancelBtn);
+        }
+
+        showDefault();
 
         li.appendChild(cb);
         li.appendChild(label);
-        li.appendChild(del);
+        li.appendChild(actions);
         itemsEl.appendChild(li);
       });
     }
@@ -182,12 +285,12 @@
         pollTimer = null;
       }
       drawBtn.textContent = 'Watch';
-      apiKeyInput.disabled = false;
+      showClearDefault();
       renderItems();
     }
 
     async function fetchAndDrawAll() {
-      const apiKey = apiKeyInput.value.trim();
+      const apiKey = (storedApiKey || apiKeyInput.value.trim());
       const checked = items.filter(i => i.checked);
       if (checked.length === 0) return;
       try {
@@ -215,10 +318,9 @@
         status.textContent = '';
         return;
       }
-      const apiKey = apiKeyInput.value.trim();
-      if (!apiKey) {
+      if (!storedApiKey) {
         status.className = 'error';
-        status.textContent = 'Please enter an API key.';
+        status.textContent = 'Set an API key first.';
         return;
       }
       if (items.filter(i => i.checked).length === 0) {
@@ -227,10 +329,8 @@
         return;
       }
 
-      parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey } }, '*');
-
       drawBtn.textContent = 'Stop';
-      apiKeyInput.disabled = true;
+      showClearDefault();
       renderItems();
       status.className = '';
       status.textContent = 'Watching for changes...';
@@ -244,7 +344,7 @@
       if (!msg) return;
 
       if (msg.type === 'init') {
-        if (msg.apiKey) apiKeyInput.value = msg.apiKey;
+        setApiKeyDisplay(msg.apiKey || '');
         items = Array.isArray(msg.items) ? msg.items : [];
         renderItems();
         return;
