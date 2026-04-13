@@ -6,11 +6,22 @@
     body { font-family: Inter, system-ui, sans-serif; font-size: 13px; color: #333; padding: 16px; }
     h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
     label { display: block; font-size: 11px; font-weight: 500; color: #666; margin-bottom: 4px; }
-    input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+    input[type=text], input[type=password] { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
     input:focus { outline: none; border-color: #5b5bff; }
-    button { width: 100%; padding: 10px; background: #5b5bff; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
+    button { padding: 10px; background: #5b5bff; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
     button:hover { background: #4a4ae0; }
     button:disabled { background: #ccc; cursor: not-allowed; }
+    button.full { width: 100%; }
+    button.small { padding: 6px 10px; font-size: 12px; }
+    button.ghost { background: transparent; color: #888; padding: 4px 8px; }
+    button.ghost:hover { background: #f3f3f3; color: #dc2626; }
+    .add-row { display: flex; gap: 6px; margin-bottom: 12px; }
+    .add-row input { margin-bottom: 0; }
+    .items { list-style: none; margin-bottom: 12px; max-height: 180px; overflow-y: auto; }
+    .item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #f0f0f0; }
+    .item:last-child { border-bottom: none; }
+    .item-id { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+    .empty { color: #999; font-style: italic; padding: 12px 0; text-align: center; }
     #status { margin-top: 12px; font-size: 12px; color: #666; min-height: 20px; }
     .error { color: #dc2626; }
     .success { color: #16a34a; }
@@ -22,10 +33,14 @@
   <label for="api-key">API Key</label>
   <input type="password" id="api-key" placeholder="Graffiticode API key" />
 
-  <label for="item-id">Item ID</label>
-  <input type="text" id="item-id" placeholder="e.g. 2FGK3MRsba" />
+  <label>Items</label>
+  <div class="add-row">
+    <input type="text" id="new-item-id" placeholder="Add item ID" />
+    <button id="add-btn" class="small">Add</button>
+  </div>
+  <ul id="items" class="items"></ul>
 
-  <button id="draw-btn">Watch</button>
+  <button id="draw-btn" class="full">Watch</button>
 
   <div id="status"></div>
 
@@ -36,37 +51,102 @@
     const POLL_INTERVAL = 3000;
 
     const apiKeyInput = document.getElementById('api-key');
-    const itemIdInput = document.getElementById('item-id');
+    const newItemInput = document.getElementById('new-item-id');
+    const addBtn = document.getElementById('add-btn');
+    const itemsEl = document.getElementById('items');
     const drawBtn = document.getElementById('draw-btn');
     const status = document.getElementById('status');
 
+    let items = []; // [{id, checked}]
     let pollTimer = null;
-    let lastDataJson = null;
+    const lastDataJson = {}; // itemId -> json
 
     let cachedToken = null;
     let tokenExpiresAt = 0;
+
+    function persistItems() {
+      parent.postMessage({ pluginMessage: { type: 'save-items', items } }, '*');
+    }
+
+    function renderItems() {
+      itemsEl.innerHTML = '';
+      if (items.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = 'No items yet';
+        itemsEl.appendChild(li);
+        return;
+      }
+      items.forEach((item, idx) => {
+        const li = document.createElement('li');
+        li.className = 'item';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = item.checked;
+        cb.disabled = !!pollTimer;
+        cb.addEventListener('change', () => {
+          items[idx].checked = cb.checked;
+          persistItems();
+        });
+
+        const label = document.createElement('span');
+        label.className = 'item-id';
+        label.textContent = item.id;
+
+        const del = document.createElement('button');
+        del.className = 'ghost small';
+        del.textContent = '\u00d7';
+        del.title = 'Remove';
+        del.disabled = !!pollTimer;
+        del.addEventListener('click', () => {
+          const removed = items.splice(idx, 1)[0];
+          delete lastDataJson[removed.id];
+          parent.postMessage({ pluginMessage: { type: 'remove-item-nodes', itemId: removed.id } }, '*');
+          persistItems();
+          renderItems();
+        });
+
+        li.appendChild(cb);
+        li.appendChild(label);
+        li.appendChild(del);
+        itemsEl.appendChild(li);
+      });
+    }
+
+    addBtn.addEventListener('click', () => {
+      const id = newItemInput.value.trim();
+      if (!id) return;
+      if (items.some(i => i.id === id)) {
+        status.className = 'error';
+        status.textContent = 'Item already in list.';
+        return;
+      }
+      items.push({ id, checked: true });
+      newItemInput.value = '';
+      persistItems();
+      renderItems();
+    });
+
+    newItemInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addBtn.click();
+    });
 
     async function getIdToken(apiKey) {
       const now = Date.now();
       if (cachedToken && tokenExpiresAt > now + 5 * 60 * 1000) {
         return cachedToken;
       }
-
-      // Step 1: Exchange API key for Firebase custom token
       const authResp = await fetch(AUTH_URL + '/authenticate/api-key', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: apiKey }),
       });
-      if (!authResp.ok) {
-        throw new Error('Invalid API key');
-      }
+      if (!authResp.ok) throw new Error('Invalid API key');
       const authData = await authResp.json();
       if (authData.status !== 'success' || !authData.data?.firebaseCustomToken) {
         throw new Error('Authentication failed');
       }
-
-      // Step 2: Exchange custom token for Firebase ID token
       const idResp = await fetch(
         'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=' + FIREBASE_API_KEY,
         {
@@ -75,14 +155,9 @@
           body: JSON.stringify({ token: authData.data.firebaseCustomToken, returnSecureToken: true }),
         }
       );
-      if (!idResp.ok) {
-        throw new Error('Token exchange failed');
-      }
+      if (!idResp.ok) throw new Error('Token exchange failed');
       const idData = await idResp.json();
-      if (!idData.idToken) {
-        throw new Error('No ID token returned');
-      }
-
+      if (!idData.idToken) throw new Error('No ID token returned');
       cachedToken = idData.idToken;
       tokenExpiresAt = now + 55 * 60 * 1000;
       return cachedToken;
@@ -92,19 +167,12 @@
       const query = `query GetItemData($id: String!) { itemData(id: $id) }`;
       const resp = await fetch(CONSOLE_API_URL, {
         method: 'POST',
-        headers: {
-          'Authorization': token,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, variables: { id: itemId } }),
       });
-      if (!resp.ok) {
-        throw new Error('Failed to fetch item data');
-      }
+      if (!resp.ok) throw new Error('Failed to fetch item data');
       const result = await resp.json();
-      if (result.errors?.length > 0) {
-        throw new Error(result.errors[0].message);
-      }
+      if (result.errors?.length > 0) throw new Error(result.errors[0].message);
       return JSON.parse(result.data.itemData);
     }
 
@@ -113,21 +181,25 @@
         clearInterval(pollTimer);
         pollTimer = null;
       }
-      lastDataJson = null;
       drawBtn.textContent = 'Watch';
       apiKeyInput.disabled = false;
-      itemIdInput.disabled = false;
+      renderItems();
     }
 
-    async function fetchAndDraw() {
+    async function fetchAndDrawAll() {
+      const apiKey = apiKeyInput.value.trim();
+      const checked = items.filter(i => i.checked);
+      if (checked.length === 0) return;
       try {
-        const token = await getIdToken(apiKeyInput.value.trim());
-        const data = await getItemData(token, itemIdInput.value.trim());
-        const source = data?._ ?? data;
-        const json = JSON.stringify(source);
-        if (json !== lastDataJson) {
-          lastDataJson = json;
-          parent.postMessage({ pluginMessage: { type: 'draw', data: source } }, '*');
+        const token = await getIdToken(apiKey);
+        for (const item of checked) {
+          const data = await getItemData(token, item.id);
+          const source = data?._ ?? data;
+          const json = JSON.stringify(source);
+          if (json !== lastDataJson[item.id]) {
+            lastDataJson[item.id] = json;
+            parent.postMessage({ pluginMessage: { type: 'draw', data: source, itemId: item.id } }, '*');
+          }
         }
       } catch (err) {
         status.className = 'error';
@@ -143,31 +215,28 @@
         status.textContent = '';
         return;
       }
-
       const apiKey = apiKeyInput.value.trim();
-      const itemId = itemIdInput.value.trim();
-
       if (!apiKey) {
         status.className = 'error';
         status.textContent = 'Please enter an API key.';
         return;
       }
-      if (!itemId) {
+      if (items.filter(i => i.checked).length === 0) {
         status.className = 'error';
-        status.textContent = 'Please enter an item ID.';
+        status.textContent = 'Check at least one item to watch.';
         return;
       }
 
-      parent.postMessage({ pluginMessage: { type: 'save', apiKey, itemId } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'save-api-key', apiKey } }, '*');
 
       drawBtn.textContent = 'Stop';
       apiKeyInput.disabled = true;
-      itemIdInput.disabled = true;
+      renderItems();
       status.className = '';
       status.textContent = 'Watching for changes...';
 
-      await fetchAndDraw();
-      pollTimer = setInterval(fetchAndDraw, POLL_INTERVAL);
+      await fetchAndDrawAll();
+      pollTimer = setInterval(fetchAndDrawAll, POLL_INTERVAL);
     });
 
     window.onmessage = (event) => {
@@ -175,14 +244,15 @@
       if (!msg) return;
 
       if (msg.type === 'init') {
-        if (msg.apiKey) { apiKeyInput.value = msg.apiKey; }
-        if (msg.itemId) { itemIdInput.value = msg.itemId; }
+        if (msg.apiKey) apiKeyInput.value = msg.apiKey;
+        items = Array.isArray(msg.items) ? msg.items : [];
+        renderItems();
         return;
       }
 
       if (msg.type === 'draw-complete') {
         status.className = 'success';
-        status.textContent = 'Watching \u2014 ' + msg.count + ' item(s) drawn.';
+        status.textContent = 'Drew ' + msg.count + ' from ' + msg.itemId;
       } else if (msg.type === 'error') {
         status.className = 'error';
         status.textContent = msg.message;
