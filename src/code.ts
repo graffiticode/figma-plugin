@@ -50,8 +50,16 @@ function resolveColor(color: unknown): RGB {
 
 // --- Node tagging ---
 
+function findAllOnAllPages(predicate: (n: SceneNode) => boolean): SceneNode[] {
+  const out: SceneNode[] = [];
+  for (const page of figma.root.children) {
+    for (const node of page.findAll(predicate)) out.push(node);
+  }
+  return out;
+}
+
 function removeOrphans(): void {
-  const orphans = figma.currentPage.findAll(
+  const orphans = findAllOnAllPages(
     n => n.getPluginData('source') === 'graffiticode'
       && !n.getPluginData('itemId')
   );
@@ -62,7 +70,7 @@ function removeOrphans(): void {
 }
 
 function removeNodesForItem(itemId: string): void {
-  const existing = figma.currentPage.findAll(
+  const existing = findAllOnAllPages(
     n => n.getPluginData('source') === 'graffiticode'
       && n.getPluginData('itemId') === itemId
   );
@@ -288,28 +296,25 @@ async function drawConnector(
 
 async function drawBoard(data: any, itemId: string): Promise<number> {
   const created: SceneNode[] = [];
-  const pages = data.pages || [];
+  const nodes = data.nodes || [];
+  const lookup = new Map<string, SceneNode>();
+  const connectors: any[] = [];
 
-  for (const page of pages) {
-    const nodes = page.nodes || [];
-    const lookup = new Map<string, SceneNode>();
-    const connectors: any[] = [];
-    for (const n of nodes) {
-      if (n && n.type === 'connector') {
-        connectors.push(n);
-        continue;
-      }
-      const node = await drawNode(n, itemId);
-      if (node) {
-        created.push(node);
-        const key = primaryKey(n);
-        if (key != null && !lookup.has(key)) lookup.set(key, node);
-      }
+  for (const n of nodes) {
+    if (n && n.type === 'connector') {
+      connectors.push(n);
+      continue;
     }
-    for (const n of connectors) {
-      const made = await drawConnector(n, itemId, lookup);
-      created.push(...made);
+    const node = await drawNode(n, itemId);
+    if (node) {
+      created.push(node);
+      const key = primaryKey(n);
+      if (key != null && !lookup.has(key)) lookup.set(key, node);
     }
+  }
+  for (const n of connectors) {
+    const made = await drawConnector(n, itemId, lookup);
+    created.push(...made);
   }
 
   if (created.length > 0) {
