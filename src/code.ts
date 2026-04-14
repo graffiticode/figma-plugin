@@ -196,6 +196,8 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
   }
 
   if (n.type === 'section') {
+    // Sections with no nested `nodes` are leaf containers; callers that
+    // want nested children use `renderNodeTree` instead.
     const section = figma.createSection();
     section.x = x;
     section.y = y;
@@ -294,6 +296,85 @@ async function drawConnector(
   return created;
 }
 
+function boundsOf(nodes: SceneNode[]): { x: number; y: number; w: number; h: number } | null {
+  if (nodes.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    const nx = 'x' in n ? n.x : 0;
+    const ny = 'y' in n ? n.y : 0;
+    const nw = 'width' in n ? n.width : 0;
+    const nh = 'height' in n ? n.height : 0;
+    if (nx < minX) minX = nx;
+    if (ny < minY) minY = ny;
+    if (nx + nw > maxX) maxX = nx + nw;
+    if (ny + nh > maxY) maxY = ny + nh;
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+async function renderNodeTree(
+  n: any,
+  itemId: string,
+  lookup: Map<string, SceneNode>,
+  connectors: any[],
+): Promise<SceneNode | null> {
+  if (!n || typeof n !== 'object') return null;
+  if (n.type === 'connector') {
+    connectors.push(n);
+    return null;
+  }
+
+  if (n.type === 'section' && Array.isArray(n.nodes)) {
+    // Render children first, then create the section sized to fit and
+    // appendChild each — translating x/y into section-local coords.
+    const children: SceneNode[] = [];
+    for (const c of n.nodes) {
+      const child = await renderNodeTree(c, itemId, lookup, connectors);
+      if (child) children.push(child);
+    }
+
+    const section = figma.createSection();
+    if (n.name) section.name = String(n.name);
+    applyFill(section as any, n);
+    applyOpacity(section, n);
+
+    const sx = n.x != null ? Number(n.x) : 0;
+    const sy = n.y != null ? Number(n.y) : 0;
+    const b = boundsOf(children);
+    const w = n.width != null
+      ? Number(n.width)
+      : (b ? b.w + 48 : section.width);
+    const h = n.height != null
+      ? Number(n.height)
+      : (b ? b.h + 72 : section.height);
+    section.x = sx;
+    section.y = sy;
+    section.resizeWithoutConstraints(w, h);
+
+    for (const c of children) {
+      if (!('x' in c) || !('y' in c)) {
+        section.appendChild(c);
+        continue;
+      }
+      const absX = (c as any).x as number;
+      const absY = (c as any).y as number;
+      section.appendChild(c);
+      (c as any).x = absX - sx;
+      (c as any).y = absY - sy;
+    }
+
+    tagNode(section, itemId);
+    return section;
+  }
+
+  const node = await drawNode(n, itemId);
+  if (node) {
+    const key = primaryKey(n);
+    if (key != null && !lookup.has(key)) lookup.set(key, node);
+  }
+  return node;
+}
+
 async function drawBoard(data: any, itemId: string): Promise<number> {
   const created: SceneNode[] = [];
   const nodes = data.nodes || [];
@@ -301,16 +382,8 @@ async function drawBoard(data: any, itemId: string): Promise<number> {
   const connectors: any[] = [];
 
   for (const n of nodes) {
-    if (n && n.type === 'connector') {
-      connectors.push(n);
-      continue;
-    }
-    const node = await drawNode(n, itemId);
-    if (node) {
-      created.push(node);
-      const key = primaryKey(n);
-      if (key != null && !lookup.has(key)) lookup.set(key, node);
-    }
+    const rendered = await renderNodeTree(n, itemId, lookup, connectors);
+    if (rendered) created.push(rendered);
   }
   for (const n of connectors) {
     const made = await drawConnector(n, itemId, lookup);
