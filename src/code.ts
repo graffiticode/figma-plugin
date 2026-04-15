@@ -341,23 +341,33 @@ async function renderNodeTree(
     const sx = n.x != null ? Number(n.x) : 0;
     const sy = n.y != null ? Number(n.y) : 0;
     const b = boundsOf(children);
+    const PAD = 24;
     const w = n.width != null
       ? Number(n.width)
-      : (b ? b.w + 48 : section.width);
+      : (b ? b.w + 2 * PAD : section.width);
     const h = n.height != null
       ? Number(n.height)
-      : (b ? b.h + 72 : section.height);
+      : (b ? b.h + 2 * PAD : section.height);
     section.x = sx;
     section.y = sy;
     section.resizeWithoutConstraints(w, h);
+
+    // Center children within the section with uniform padding.
+    let dx = 0, dy = 0;
+    if (b) {
+      const targetX = sx + (w - b.w) / 2;
+      const targetY = sy + (h - b.h) / 2;
+      dx = targetX - b.x;
+      dy = targetY - b.y;
+    }
 
     for (const c of children) {
       if (!('x' in c) || !('y' in c)) {
         section.appendChild(c);
         continue;
       }
-      const absX = (c as any).x as number;
-      const absY = (c as any).y as number;
+      const absX = ((c as any).x as number) + dx;
+      const absY = ((c as any).y as number) + dy;
       section.appendChild(c);
       (c as any).x = absX - sx;
       (c as any).y = absY - sy;
