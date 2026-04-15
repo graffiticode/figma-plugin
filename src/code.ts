@@ -212,15 +212,51 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
   }
 
   if (n.type === 'stamp') {
+    // FigJam's plugin API has no createStamp; emulate a stamp as a small
+    // tinted circle with the emoji glyph for the named reaction centered
+    // inside it. Sized and styled to read like a native FigJam stamp.
+    const STAMP_GLYPH: Record<string, string> = {
+      like: '👍',
+      love: '❤️',
+      heart: '❤️',
+      celebrate: '🎉',
+      party: '🎉',
+      fire: '🔥',
+      hot: '🔥',
+      star: '⭐',
+      rocket: '🚀',
+      laugh: '😂',
+      smile: '😀',
+      sad: '😢',
+      cry: '😢',
+      angry: '😠',
+      thinking: '🤔',
+      clap: '👏',
+      eyes: '👀',
+      ok: '👌',
+      thumbsup: '👍',
+      thumbsdown: '👎',
+      check: '✅',
+      cross: '❌',
+      question: '❓',
+      warning: '⚠️',
+      bulb: '💡',
+      idea: '💡',
+    };
+    const key = String(n.stamp ?? '').trim().toLowerCase();
+    const glyph = STAMP_GLYPH[key] ?? (key || '⭐');
+    const SIZE = 40;
     const stamp = figma.createShapeWithText();
     stamp.shapeType = 'ELLIPSE';
     stamp.x = x;
     stamp.y = y;
-    stamp.resize(48, 48);
-    if (n.stamp) {
-      await figma.loadFontAsync(DEFAULT_FONT);
-      stamp.text.characters = String(n.stamp);
-    }
+    stamp.resize(SIZE, SIZE);
+    stamp.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    stamp.strokes = [{ type: 'SOLID', color: { r: 0.85, g: 0.85, b: 0.85 } }];
+    stamp.strokeWeight = 1;
+    await figma.loadFontAsync(DEFAULT_FONT);
+    stamp.text.characters = glyph;
+    stamp.text.fontSize = 22;
     applyOpacity(stamp, n);
     tagNode(stamp, itemId);
     return stamp;
