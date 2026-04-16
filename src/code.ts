@@ -274,6 +274,7 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
 function primaryKey(n: any): string | null {
   if (!n || typeof n !== 'object') return null;
   if (n.type === 'shape' || n.type === 'sticky' || n.type === 'text') {
+    if (n.id != null) return String(n.id);
     return n.text != null ? String(n.text) : null;
   }
   if (n.type === 'section') return n.name != null ? String(n.name) : null;
