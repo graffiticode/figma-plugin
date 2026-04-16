@@ -331,13 +331,16 @@ async function drawConnector(
     for (const tgt of targets) {
       if (src === tgt) continue;
       const c = figma.createConnector();
-      c.connectorStart = { endpointNodeId: src.id, magnet: 'AUTO' };
-      c.connectorEnd = { endpointNodeId: tgt.id, magnet: 'AUTO' };
+      // connectorLineType must be set before endpoints: straight
+      // connectors reject magnet 'AUTO', only elbowed accepts it.
+      if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
+      const magnet = c.connectorLineType === 'ELBOWED' ? 'AUTO' : 'CENTER';
+      c.connectorStart = { endpointNodeId: src.id, magnet };
+      c.connectorEnd = { endpointNodeId: tgt.id, magnet };
       if (label) {
         await figma.loadFontAsync(DEFAULT_FONT);
         c.text.characters = label;
       }
-      if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
       if (fromCap) c.connectorStartStrokeCap = fromCap as ConnectorNode['connectorStartStrokeCap'];
       if (toCap) c.connectorEndStrokeCap = toCap as ConnectorNode['connectorEndStrokeCap'];
       applyStroke(c as any, n);
