@@ -336,6 +336,8 @@ async function drawConnector(
   const lineType = toEnumValue(n.lineType);
   const fromCap = toEnumValue(n.fromCap);
   const toCap = toEnumValue(n.toCap);
+  const fromSide = toEnumValue(n.fromSide);
+  const toSide = toEnumValue(n.toSide);
   const created: SceneNode[] = [];
   for (const src of sources) {
     for (const tgt of targets) {
@@ -344,9 +346,17 @@ async function drawConnector(
       // connectorLineType must be set before endpoints: straight
       // connectors reject magnet 'AUTO', only elbowed accepts it.
       if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
-      const magnet = c.connectorLineType === 'ELBOWED' ? 'AUTO' : 'CENTER';
-      c.connectorStart = { endpointNodeId: src.id, magnet };
-      c.connectorEnd = { endpointNodeId: tgt.id, magnet };
+      const defaultMagnet = c.connectorLineType === 'ELBOWED' ? 'AUTO' : 'CENTER';
+      const resolveMagnet = (side: string | null) => {
+        if (!side) return defaultMagnet;
+        if (side === 'AUTO' && c.connectorLineType !== 'ELBOWED') return 'CENTER';
+        return side;
+      };
+      const fromMagnet = resolveMagnet(fromSide);
+      const toMagnet = resolveMagnet(toSide);
+      type Magnet = ConnectorEndpoint extends { magnet?: infer M } ? M : never;
+      c.connectorStart = { endpointNodeId: src.id, magnet: fromMagnet as Magnet };
+      c.connectorEnd = { endpointNodeId: tgt.id, magnet: toMagnet as Magnet };
       if (label) {
         await figma.loadFontAsync(DEFAULT_FONT);
         c.text.characters = label;
