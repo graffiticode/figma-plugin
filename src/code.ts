@@ -246,17 +246,23 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     const key = String(n.stamp ?? '').trim().toLowerCase();
     const glyph = STAMP_GLYPH[key] ?? (key || '⭐');
     const SIZE = 40;
-    const stamp = figma.createShapeWithText();
-    stamp.shapeType = 'ELLIPSE';
+    const ellipse = figma.createEllipse();
+    ellipse.resize(SIZE, SIZE);
+    ellipse.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    ellipse.strokes = [{ type: 'SOLID', color: { r: 0.85, g: 0.85, b: 0.85 } }];
+    ellipse.strokeWeight = 1;
+    await figma.loadFontAsync(DEFAULT_FONT);
+    const text = figma.createText();
+    text.fontName = DEFAULT_FONT;
+    text.fontSize = 22;
+    text.characters = glyph;
+    text.textAlignHorizontal = 'CENTER';
+    text.textAlignVertical = 'CENTER';
+    text.x = (SIZE - text.width) / 2;
+    text.y = (SIZE - text.height) / 2;
+    const stamp = figma.group([ellipse, text], figma.currentPage);
     stamp.x = x;
     stamp.y = y;
-    stamp.resize(SIZE, SIZE);
-    stamp.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
-    stamp.strokes = [{ type: 'SOLID', color: { r: 0.85, g: 0.85, b: 0.85 } }];
-    stamp.strokeWeight = 1;
-    await figma.loadFontAsync(DEFAULT_FONT);
-    stamp.text.characters = glyph;
-    stamp.text.fontSize = 22;
     applyOpacity(stamp, n);
     tagNode(stamp, itemId);
     return stamp;
@@ -303,6 +309,11 @@ function resolveEndpoints(
   return out;
 }
 
+function toEnumValue(v: unknown): string | null {
+  if (typeof v !== 'string' || v === '') return null;
+  return v.toUpperCase().replace(/-/g, '_');
+}
+
 async function drawConnector(
   n: any,
   itemId: string,
@@ -312,6 +323,9 @@ async function drawConnector(
   const targets = resolveEndpoints(n.to, n.from, lookup);
   if (sources.length === 0 || targets.length === 0) return [];
   const label = n.label != null ? String(n.label) : '';
+  const lineType = toEnumValue(n.lineType);
+  const fromCap = toEnumValue(n.fromCap);
+  const toCap = toEnumValue(n.toCap);
   const created: SceneNode[] = [];
   for (const src of sources) {
     for (const tgt of targets) {
@@ -323,6 +337,9 @@ async function drawConnector(
         await figma.loadFontAsync(DEFAULT_FONT);
         c.text.characters = label;
       }
+      if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
+      if (fromCap) c.connectorStartStrokeCap = fromCap as ConnectorNode['connectorStartStrokeCap'];
+      if (toCap) c.connectorEndStrokeCap = toCap as ConnectorNode['connectorEndStrokeCap'];
       applyStroke(c as any, n);
       applyOpacity(c, n);
       tagNode(c, itemId);
