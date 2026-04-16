@@ -111,6 +111,12 @@ function tagNode(node: SceneNode, itemId: string): void {
 
 const DEFAULT_FONT: FontName = { family: 'Inter', style: 'Medium' };
 
+function applyFontSize(slot: { fontSize: number | typeof figma.mixed }, n: any): void {
+  if (n.fontSize != null) {
+    (slot as { fontSize: number }).fontSize = Number(n.fontSize);
+  }
+}
+
 function applyOpacity(node: SceneNode, n: any): void {
   if (n.opacity != null && 'opacity' in node) {
     (node as SceneNode & { opacity: number }).opacity = Math.max(0, Math.min(1, Number(n.opacity) / 100));
@@ -160,6 +166,7 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     if (n.text) {
       await figma.loadFontAsync(DEFAULT_FONT);
       shape.text.characters = String(n.text);
+      applyFontSize(shape.text, n);
     }
     applyFill(shape, n);
     applyStroke(shape, n);
@@ -175,6 +182,7 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     if (n.text) {
       await figma.loadFontAsync(DEFAULT_FONT);
       sticky.text.characters = String(n.text);
+      applyFontSize(sticky.text, n);
     }
     applyFill(sticky, n);
     applyOpacity(sticky, n);
@@ -189,6 +197,7 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     t.x = x;
     t.y = y;
     if (n.text) t.characters = String(n.text);
+    applyFontSize(t, n);
     if (n.color) t.fills = [{ type: 'SOLID', color: resolveColor(n.color) }];
     applyOpacity(t, n);
     tagNode(t, itemId);
@@ -341,6 +350,7 @@ async function drawConnector(
       if (label) {
         await figma.loadFontAsync(DEFAULT_FONT);
         c.text.characters = label;
+        applyFontSize(c.text, n);
       }
       if (fromCap) c.connectorStartStrokeCap = fromCap as ConnectorNode['connectorStartStrokeCap'];
       if (toCap) c.connectorEndStrokeCap = toCap as ConnectorNode['connectorEndStrokeCap'];
