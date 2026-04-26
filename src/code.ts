@@ -364,7 +364,10 @@ async function drawConnector(
       }
       if (fromCap) c.connectorStartStrokeCap = fromCap as ConnectorNode['connectorStartStrokeCap'];
       if (toCap) c.connectorEndStrokeCap = toCap as ConnectorNode['connectorEndStrokeCap'];
-      applyStroke(c as any, n);
+      // On a connector, `color` falls back as the line color when no explicit `stroke` is set.
+      const strokeSrc = (n.stroke == null && n.color != null) ? { ...n, stroke: n.color } : n;
+      applyStroke(c as any, strokeSrc);
+      if (n.lineStyle === 'dashed') c.dashPattern = [8, 4];
       applyOpacity(c, n);
       tagNode(c, itemId);
       created.push(c);
