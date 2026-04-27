@@ -138,10 +138,15 @@ function applyStroke(
   n: any,
 ): void {
   const weight = n['stroke-width'] ?? n.strokeWidth;
+  // Respect any strokeWeight already set on the node (e.g. connectors
+  // pin a default before applyStroke runs); fall back to 2 only if the
+  // node hasn't been pre-weighted.
+  const existing = (node as any).strokeWeight;
+  const fallback = typeof existing === 'number' ? existing : 2;
   if (n.stroke) {
     const color = resolveColor(n.stroke);
     (node as any).strokes = [{ type: 'SOLID', color }];
-    (node as any).strokeWeight = weight ?? 2;
+    (node as any).strokeWeight = weight ?? fallback;
   } else if (weight != null) {
     // Stroke weight set without an explicit color — derive a darker
     // hue of the fill so FigJam's subtle-border look is preserved.
