@@ -343,6 +343,10 @@ async function drawConnector(
     for (const tgt of targets) {
       if (src === tgt) continue;
       const c = figma.createConnector();
+      // Connectors always carry a line, so default the stroke weight up
+      // front. FigJam's bare-toolbar default matches the thin preset (4);
+      // explicit thick (8) overrides this in applyStroke below.
+      c.strokeWeight = (n['stroke-width'] ?? n.strokeWidth) ?? 4;
       // connectorLineType must be set before endpoints: straight
       // connectors reject magnet 'AUTO', only elbowed accepts it.
       if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
