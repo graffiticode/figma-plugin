@@ -289,6 +289,22 @@
       renderItems();
     }
 
+    // Compile/stored responses use the standard { data, errors } envelope. A
+    // response carrying a `data` and/or `errors` field is read as an envelope;
+    // a payload with neither (legacy raw value) is used as the data model.
+    function unwrapEnvelope(resp) {
+      if (
+        resp && typeof resp === 'object' && !Array.isArray(resp) &&
+        ('data' in resp || 'errors' in resp)
+      ) {
+        return {
+          data: resp.data,
+          errors: Array.isArray(resp.errors) ? resp.errors : [],
+        };
+      }
+      return { data: resp, errors: [] };
+    }
+
     async function fetchAndDrawAll() {
       const apiKey = (storedApiKey || apiKeyInput.value.trim());
       const checked = items.filter(i => i.checked);
@@ -296,8 +312,13 @@
       try {
         const token = await getIdToken(apiKey);
         for (const item of checked) {
-          const data = await getItemData(token, item.id);
-          const source = data?._ ?? data;
+          const raw = await getItemData(token, item.id);
+          const { data, errors } = unwrapEnvelope(raw?._ ?? raw);
+          if (errors.length > 0) {
+            const first = errors[0];
+            throw new Error((first && (first.message || first.str)) || 'Compile error for ' + item.id);
+          }
+          const source = data;
           const json = JSON.stringify(source);
           if (json !== lastDataJson[item.id]) {
             lastDataJson[item.id] = json;
