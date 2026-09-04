@@ -76,6 +76,7 @@
     let storedApiKey = '';
     let pollTimer = null;
     const lastDataJson = {}; // itemId -> json
+    const lastRawJson = {}; // itemId -> json, debug logging only
 
     function setApiKeyDisplay(key) {
       storedApiKey = key || '';
@@ -328,7 +329,20 @@
         const token = await getIdToken(apiKey);
         for (const item of checked) {
           const raw = await getItemData(token, item.id);
+          // Debug: log the payload shape once per distinct response (polling
+          // runs every 3s, so unconditional logging would flood the console).
+          const rawJson = JSON.stringify(raw);
+          const rawChanged = rawJson !== lastRawJson[item.id];
+          lastRawJson[item.id] = rawJson;
+          if (rawChanged) {
+            console.log('[gc] raw payload for ' + item.id + ':', raw);
+            console.log('[gc] raw keys for ' + item.id + ':',
+              raw && typeof raw === 'object' ? Object.keys(raw).join(', ') : typeof raw);
+          }
           const { data, errors } = unwrapEnvelope(raw);
+          if (rawChanged) {
+            console.log('[gc] unwrapped for ' + item.id + ':', data, 'errors:', errors);
+          }
           if (errors.length > 0) {
             const first = errors[0];
             throw new Error((first && (first.message || first.str)) || 'Compile error for ' + item.id);
