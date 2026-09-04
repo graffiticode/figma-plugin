@@ -289,20 +289,35 @@
       renderItems();
     }
 
-    // Compile/stored responses use the standard { data, errors } envelope. A
-    // response carrying a `data` and/or `errors` field is read as an envelope;
-    // a payload with neither (legacy raw value) is used as the data model.
+    // Compile/stored responses use the standard { data, errors } envelope, and
+    // the compiler may additionally wrap the value in a `_` node. Both wrappers
+    // can nest in either order ({ data: { _: board } } as well as { _: { data:
+    // board } }), so peel them until an unwrapped value remains, collecting any
+    // errors seen along the way. A payload with neither wrapper (legacy raw
+    // value) is used as the data model.
+    function isPlainObject(v) {
+      return v !== null && typeof v === 'object' && !Array.isArray(v);
+    }
+
     function unwrapEnvelope(resp) {
-      if (
-        resp && typeof resp === 'object' && !Array.isArray(resp) &&
-        ('data' in resp || 'errors' in resp)
-      ) {
-        return {
-          data: resp.data,
-          errors: Array.isArray(resp.errors) ? resp.errors : [],
-        };
+      let value = resp;
+      const errors = [];
+      for (let i = 0; i < 10 && isPlainObject(value); i++) {
+        // A renderable value is never a wrapper, even if it carries a `data`
+        // field of its own.
+        if (typeof value.type === 'string') break;
+        if ('data' in value || 'errors' in value) {
+          if (Array.isArray(value.errors)) { errors.push(...value.errors); }
+          value = value.data;
+          continue;
+        }
+        if ('_' in value && Object.keys(value).length === 1) {
+          value = value._;
+          continue;
+        }
+        break;
       }
-      return { data: resp, errors: [] };
+      return { data: value, errors };
     }
 
     async function fetchAndDrawAll() {
@@ -313,7 +328,7 @@
         const token = await getIdToken(apiKey);
         for (const item of checked) {
           const raw = await getItemData(token, item.id);
-          const { data, errors } = unwrapEnvelope(raw?._ ?? raw);
+          const { data, errors } = unwrapEnvelope(raw);
           if (errors.length > 0) {
             const first = errors[0];
             throw new Error((first && (first.message || first.str)) || 'Compile error for ' + item.id);
