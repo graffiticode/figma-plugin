@@ -2,7 +2,7 @@
 
 A FigJam plugin that renders Graffiticode content onto a FigJam board. It fetches compiled data from the Graffiticode API and creates native FigJam nodes.
 
-Currently supports **ellipses** (L0172). The renderer registry is extensible to other Graffiticode languages.
+It draws **FigJam boards** compiled by L0186 (and by its predecessor L0172): sticky notes, text, shapes with text, sections, stamps and connectors. An L0186 program that starts with `save-to-figjam "<FigJam link>"` names the file this plugin draws it into.
 
 ## Setup
 
@@ -22,29 +22,29 @@ npm run build
 
 1. Run the plugin from **Plugins > Development > Graffiticode**
 2. Enter your Graffiticode **API Key**
-3. Enter a Graffiticode **Item ID** (e.g. `2FGK3MRsba`)
-4. Click **Draw**
+3. Add one or more Graffiticode **Item IDs** (e.g. `2FGK3MRsba`)
+4. Click **Watch**: the plugin draws each checked item and redraws it whenever it changes (polling every 3s)
 
-The plugin authenticates with the Graffiticode API, fetches the compiled data, detects the data shape, and creates the corresponding FigJam nodes. The viewport scrolls and zooms to frame the result.
+The API key is exchanged (via `auth.graffiticode.org`) for a Firebase ID token, cached for 55 minutes. Each item's compiled data comes from the console GraphQL query `itemData(id)`; `{data, errors}` and `_` wrappers are peeled off, and compile errors are shown instead of drawing.
 
-The API key is exchanged for a Firebase ID token (cached for 55 minutes). The item ID is resolved to a task ID via the console GraphQL API, then compiled data is fetched from the Graffiticode data API.
+### What happens on a draw
 
-### What happens on Draw
+- The item's previously drawn nodes on the current FigJam page are removed (they are tagged with plugin data `source` and `itemId`)
+- New nodes are created from the compiled board, and the viewport frames them
+- If the board was saved to a different FigJam file (`fileKey`), nothing is drawn and the plugin says which file it belongs to (when the plugin can read the current file's key)
 
-- All previously created Graffiticode nodes are removed (tagged via plugin data)
-- New nodes are created from the compiled data
-- Ellipses become `EllipseNode`s with fill, stroke, and opacity
-- Labels become sticky notes positioned below each ellipse
+### Pages
 
-### Updating content
+An L0186 board has one or more pages. The plugin API cannot create pages in FigJam, so the plugin draws one page into the current FigJam page: the board page with the same name, or else the first. To draw another page, switch to (or rename) a FigJam page with that page's name and draw again; the status line lists the board's other pages.
 
-Edit the Graffiticode item (via the console or MCP tools), then click **Draw** again in the plugin. The old nodes are replaced with the new ones.
-
-## Supported renderers
+## The board contract
 
 | Data shape | Language | Renderer |
 |-----------|----------|----------|
-| `{ ellipses: [...] }` | L0172 | Ellipses with position, size, fill, stroke, opacity, labels |
+| `{ type: "board", pages: [{ name, background?, nodes }], fileKey? }` | L0186 | `drawBoard`, one page |
+| `{ type: "board", nodes: [...], fileKey? }` | L0172 | `drawBoard` |
+
+Nodes are `sticky`, `shape` (`shapeType` in Figma's enum spelling), `text`, `section` (with nested `nodes`), `stamp` and `connector` (`from`/`to` naming a node's id, text, a section's name or a stamp; a list; or `"*"`). L0186's SVG preview (`graffiticode/languages/l0186/packages/view/src/lib/layout.ts`) mirrors this file's placement rules — change them together.
 
 ## Adding a new renderer
 
