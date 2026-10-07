@@ -402,7 +402,7 @@
 
       if (msg.type === 'draw-complete') {
         status.className = 'success';
-        status.textContent = 'Drew ' + msg.count + ' from ' + msg.itemId;
+        status.textContent = 'Drew ' + msg.count + ' from ' + msg.itemId + (msg.note || '');
       } else if (msg.type === 'error') {
         status.className = 'error';
         status.textContent = msg.message;

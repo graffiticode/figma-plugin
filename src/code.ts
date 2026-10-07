@@ -69,8 +69,10 @@ function removeOrphans(): void {
   }
 }
 
+// An item's nodes are cleared from the current page only: an L0186 board draws one of its pages
+// into each FigJam page, so redrawing "Retro" here must not delete "Planning" drawn elsewhere.
 function removeNodesForItem(itemId: string): void {
-  const existing = findAllOnAllPages(
+  const existing = figma.currentPage.findAll(
     n => n.getPluginData('source') === 'graffiticode'
       && n.getPluginData('itemId') === itemId
   );
@@ -240,6 +242,7 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
       star: '⭐',
       rocket: '🚀',
       laugh: '😂',
+      surprised: '😮',
       smile: '😀',
       sad: '😢',
       cry: '😢',
@@ -463,6 +466,9 @@ async function renderNodeTree(
     }
 
     tagNode(section, itemId);
+    // A section is addressable by its name, like a leaf section, so a connector can attach to it.
+    const key = primaryKey(n);
+    if (key != null && !lookup.has(key)) lookup.set(key, section);
     return section;
   }
 
@@ -474,9 +480,41 @@ async function renderNodeTree(
   return node;
 }
 
+/**
+ * Which page of a board to draw here. An L0186 board has `pages`; an L0172 board has `nodes`.
+ * The plugin API cannot create pages in FigJam, so one page is drawn into the current FigJam
+ * page: the one whose name matches it, else the board's first page.
+ */
+function pickPage(data: any): { nodes: any[]; name?: string; background?: string; others: string[] } {
+  if (!Array.isArray(data.pages)) return { nodes: data.nodes || [], others: [] };
+  const pages = data.pages.filter((p: any) => p && typeof p === 'object');
+  const page = pages.find((p: any) => p.name === figma.currentPage.name) || pages[0] || { nodes: [] };
+  return {
+    nodes: page.nodes || [],
+    name: page.name,
+    background: page.background,
+    others: pages.filter((p: any) => p !== page).map((p: any) => String(p.name)),
+  };
+}
+
+/** An item saved to one FigJam file is not drawn into another. Null when the file is right, or unknown. */
+function wrongFile(data: any): string | null {
+  const here = (figma as any).fileKey;
+  if (!data.fileKey || typeof here !== 'string' || !here) return null;
+  return data.fileKey === here
+    ? null
+    : 'This board is saved to FigJam file ' + data.fileKey + ', not this one. Open https://www.figma.com/board/' + data.fileKey + ' to draw it there.';
+}
+
 async function drawBoard(data: any, itemId: string): Promise<number> {
   const created: SceneNode[] = [];
-  const nodes = data.nodes || [];
+  const page = pickPage(data);
+  const nodes = page.nodes;
+  if (page.background) {
+    try {
+      figma.currentPage.backgrounds = [{ type: 'SOLID', color: resolveColor(page.background) }];
+    } catch { /* FigJam may not allow a page background; the nodes still draw */ }
+  }
   const lookup = new Map<string, SceneNode>();
   const connectors: any[] = [];
 
@@ -555,9 +593,18 @@ figma.ui.onmessage = async (msg: any) => {
       });
       return;
     }
+    const wrong = wrongFile(msg.data);
+    if (wrong) {
+      figma.ui.postMessage({ type: 'error', message: wrong });
+      return;
+    }
     removeOrphans();
     removeNodesForItem(msg.itemId);
     const count = await renderer(msg.data, msg.itemId);
-    figma.ui.postMessage({ type: 'draw-complete', itemId: msg.itemId, count });
+    const page = pickPage(msg.data);
+    const note = page.others.length
+      ? ' (page "' + page.name + '"; switch to a FigJam page named ' + page.others.map(n => '"' + n + '"').join(' or ') + ' and draw again for the others)'
+      : '';
+    figma.ui.postMessage({ type: 'draw-complete', itemId: msg.itemId, count, note });
   }
 };
