@@ -231,10 +231,11 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     // FigJam's plugin API has no createStamp; emulate a stamp as a small
     // tinted circle with the emoji glyph for the named reaction centered
     // inside it. Sized and styled to read like a native FigJam stamp.
+    // ❤️ (U+2764) draws as a black text glyph in FigJam's Inter, so the hearts use colour emoji.
     const STAMP_GLYPH: Record<string, string> = {
       like: '👍',
-      love: '❤️',
-      heart: '❤️',
+      love: '😍',
+      heart: '💖',
       celebrate: '🎉',
       party: '🎉',
       fire: '🔥',
