@@ -333,6 +333,71 @@ function toEnumValue(v: unknown): string | null {
   return v.toUpperCase().replace(/-/g, '_');
 }
 
+type Magnet = ConnectorEndpoint extends { magnet?: infer M } ? M : never;
+
+/** One end of one FigJam connector: a node with its side, or a fixed point on the page. */
+type Stop = { node: SceneNode; side: string | null } | { point: { x: number; y: number } };
+
+/**
+ * Draw one FigJam connector from `a` to `b` in `n`'s style. `fromCap`, `toCap` and `label` are
+ * passed per segment, because a connector routed through waypoints is drawn as one connector
+ * per leg: caps only on the outer ends, the label on the middle leg.
+ */
+async function drawSegment(
+  n: any,
+  a: Stop,
+  b: Stop,
+  caps: { fromCap: string | null; toCap: string | null },
+  label: string,
+  itemId: string,
+): Promise<ConnectorNode> {
+  const lineType = toEnumValue(n.lineType);
+  const c = figma.createConnector();
+  // Connectors always carry a line, so default the stroke weight up
+  // front. FigJam's bare-toolbar default matches the thin preset (4);
+  // explicit thick (8) overrides this in applyStroke below.
+  c.strokeWeight = (n['stroke-width'] ?? n.strokeWidth) ?? 4;
+  // connectorLineType must be set before endpoints: elbowed and curved
+  // connectors reject magnet 'CENTER', so they default to 'AUTO' (and a
+  // 'CENTER' from an older program becomes 'AUTO'); straight ones keep
+  // 'CENTER', with 'AUTO' mapped to it.
+  if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
+  const straight = c.connectorLineType === 'STRAIGHT';
+  const resolveMagnet = (side: string | null) => {
+    if (!side) return straight ? 'CENTER' : 'AUTO';
+    if (side === 'AUTO' && straight) return 'CENTER';
+    if (side === 'CENTER' && !straight) return 'AUTO';
+    return side;
+  };
+  const endpoint = (s: Stop): ConnectorEndpoint =>
+    'point' in s
+      ? { position: { x: s.point.x, y: s.point.y } }
+      : { endpointNodeId: s.node.id, magnet: resolveMagnet(s.side) as Magnet };
+  c.connectorStart = endpoint(a);
+  c.connectorEnd = endpoint(b);
+  if (label) {
+    await figma.loadFontAsync(DEFAULT_FONT);
+    c.text.characters = label;
+    applyFontSize(c.text, n);
+  }
+  if (caps.fromCap) c.connectorStartStrokeCap = caps.fromCap as ConnectorNode['connectorStartStrokeCap'];
+  if (caps.toCap) c.connectorEndStrokeCap = caps.toCap as ConnectorNode['connectorEndStrokeCap'];
+  // On a connector, `color` falls back as the line color when no explicit `stroke` is set.
+  const strokeSrc = (n.stroke == null && n.color != null) ? { ...n, stroke: n.color } : n;
+  applyStroke(c as any, strokeSrc);
+  if (n.lineStyle === 'dashed') c.dashPattern = [8, 4];
+  applyOpacity(c, n);
+  tagNode(c, itemId);
+  return c;
+}
+
+/** Waypoints as `{x, y}` points, or null when the connector has none. */
+function waypointsOf(n: any): { x: number; y: number }[] | null {
+  if (!Array.isArray(n.waypoints) || n.waypoints.length === 0) return null;
+  const pts = n.waypoints.filter((p: any) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+  return pts.length ? pts.map((p: any) => ({ x: p.x, y: p.y })) : null;
+}
+
 async function drawConnector(
   n: any,
   itemId: string,
@@ -342,48 +407,28 @@ async function drawConnector(
   const targets = resolveEndpoints(n.to, n.from, lookup);
   if (sources.length === 0 || targets.length === 0) return [];
   const label = n.label != null ? String(n.label) : '';
-  const lineType = toEnumValue(n.lineType);
   const fromCap = toEnumValue(n.fromCap);
   const toCap = toEnumValue(n.toCap);
   const fromSide = toEnumValue(n.fromSide);
   const toSide = toEnumValue(n.toSide);
+  const waypoints = waypointsOf(n);
   const created: SceneNode[] = [];
   for (const src of sources) {
     for (const tgt of targets) {
       if (src === tgt) continue;
-      const c = figma.createConnector();
-      // Connectors always carry a line, so default the stroke weight up
-      // front. FigJam's bare-toolbar default matches the thin preset (4);
-      // explicit thick (8) overrides this in applyStroke below.
-      c.strokeWeight = (n['stroke-width'] ?? n.strokeWidth) ?? 4;
-      // connectorLineType must be set before endpoints: straight
-      // connectors reject magnet 'AUTO', only elbowed accepts it.
-      if (lineType) c.connectorLineType = lineType as ConnectorNode['connectorLineType'];
-      const defaultMagnet = c.connectorLineType === 'ELBOWED' ? 'AUTO' : 'CENTER';
-      const resolveMagnet = (side: string | null) => {
-        if (!side) return defaultMagnet;
-        if (side === 'AUTO' && c.connectorLineType !== 'ELBOWED') return 'CENTER';
-        return side;
-      };
-      const fromMagnet = resolveMagnet(fromSide);
-      const toMagnet = resolveMagnet(toSide);
-      type Magnet = ConnectorEndpoint extends { magnet?: infer M } ? M : never;
-      c.connectorStart = { endpointNodeId: src.id, magnet: fromMagnet as Magnet };
-      c.connectorEnd = { endpointNodeId: tgt.id, magnet: toMagnet as Magnet };
-      if (label) {
-        await figma.loadFontAsync(DEFAULT_FONT);
-        c.text.characters = label;
-        applyFontSize(c.text, n);
+      // FigJam has no waypoints: a routed connector is one connector per leg, the legs meeting
+      // at fixed points on the page. Inner ends carry no cap.
+      const stops: Stop[] = [
+        { node: src, side: fromSide },
+        ...(waypoints ?? []).map((point) => ({ point })),
+        { node: tgt, side: toSide },
+      ];
+      const legs = stops.length - 1;
+      const labelled = Math.floor((legs - 1) / 2);
+      for (let i = 0; i < legs; i++) {
+        const caps = { fromCap: i === 0 ? fromCap : 'NONE', toCap: i === legs - 1 ? toCap : 'NONE' };
+        created.push(await drawSegment(n, stops[i], stops[i + 1], caps, i === labelled ? label : '', itemId));
       }
-      if (fromCap) c.connectorStartStrokeCap = fromCap as ConnectorNode['connectorStartStrokeCap'];
-      if (toCap) c.connectorEndStrokeCap = toCap as ConnectorNode['connectorEndStrokeCap'];
-      // On a connector, `color` falls back as the line color when no explicit `stroke` is set.
-      const strokeSrc = (n.stroke == null && n.color != null) ? { ...n, stroke: n.color } : n;
-      applyStroke(c as any, strokeSrc);
-      if (n.lineStyle === 'dashed') c.dashPattern = [8, 4];
-      applyOpacity(c, n);
-      tagNode(c, itemId);
-      created.push(c);
     }
   }
   return created;
