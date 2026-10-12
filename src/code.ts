@@ -391,11 +391,142 @@ async function drawSegment(
   return c;
 }
 
-/** Waypoints as `{x, y}` points, or null when the connector has none. */
-function waypointsOf(n: any): { x: number; y: number }[] | null {
+/**
+ * Waypoints as page points, or null when the connector has none. A null coordinate (`_` in the
+ * program) keeps the current one: the previous point's, or for the first waypoint the centre of
+ * the start node on the page.
+ */
+function waypointsOf(n: any, start: SceneNode): { x: number; y: number }[] | null {
   if (!Array.isArray(n.waypoints) || n.waypoints.length === 0) return null;
-  const pts = n.waypoints.filter((p: any) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
-  return pts.length ? pts.map((p: any) => ({ x: p.x, y: p.y })) : null;
+  const b = start.absoluteBoundingBox;
+  let cur = b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : { x: 0, y: 0 };
+  const pts = n.waypoints
+    .filter((p: any) => p && (Number.isFinite(p.x) || Number.isFinite(p.y)))
+    .map((p: any) => (cur = { x: Number.isFinite(p.x) ? p.x : cur.x, y: Number.isFinite(p.y) ? p.y : cur.y }));
+  return pts.length ? pts : null;
+}
+
+type Pt = { x: number; y: number };
+type Corner = { w: Pt; a: Pt; b: Pt };
+
+/** FigJam's elbow radius (measured 2026-10-08); waypoint corners use the same. */
+const CORNER_RADIUS = 16;
+
+const SIDE_DIR: Record<string, Pt> = { TOP: { x: 0, y: -1 }, BOTTOM: { x: 0, y: 1 }, LEFT: { x: -1, y: 0 }, RIGHT: { x: 1, y: 0 } };
+
+function boxOf(node: SceneNode): { x: number; y: number; w: number; h: number } {
+  const b = node.absoluteBoundingBox;
+  return b ? { x: b.x, y: b.y, w: b.width, h: b.height } : { x: 0, y: 0, w: 0, h: 0 };
+}
+const centreOf = (node: SceneNode): Pt => {
+  const b = boxOf(node);
+  return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+};
+const unitOf = (v: Pt): Pt => {
+  const l = Math.hypot(v.x, v.y) || 1;
+  return { x: v.x / l, y: v.y / l };
+};
+const sgn = (v: number) => (v < 0 ? -1 : 1);
+/** The dominant axis of `v`, as a unit step along it (a tie runs across). */
+const axisOf = (v: Pt): Pt => (Math.abs(v.x) >= Math.abs(v.y) ? { x: sgn(v.x), y: 0 } : { x: 0, y: sgn(v.y) });
+
+/**
+ * The side a leg attaches to a node at, when its other end is a waypoint. An explicit side is
+ * kept; AUTO (and CENTER, which FigJam refuses here) faces the point: across where the point is
+ * level with the node, up or down where it is above or below it, and otherwise along the dominant
+ * axis — the same whichever end the waypoint is (measured 2026-10-08 and 2026-10-12).
+ */
+function sideToward(node: SceneNode, side: string | null, p: Pt, straight: boolean): string {
+  if (straight) return side && side !== 'AUTO' ? side : 'CENTER';
+  if (side && side !== 'AUTO' && side !== 'CENTER') return side;
+  const b = boxOf(node);
+  const c = centreOf(node);
+  const dx = p.x - c.x;
+  const dy = p.y - c.y;
+  const across = dx >= 0 ? 'RIGHT' : 'LEFT';
+  const down = dy >= 0 ? 'BOTTOM' : 'TOP';
+  if (b.y < p.y && p.y < b.y + b.h) return across;
+  if (b.x < p.x && p.x < b.x + b.w) return down;
+  return Math.abs(dx) > Math.abs(dy) ? across : down;
+}
+
+function sidePointOf(node: SceneNode, side: string): Pt {
+  const b = boxOf(node);
+  const c = centreOf(node);
+  if (side === 'TOP') return { x: c.x, y: b.y };
+  if (side === 'BOTTOM') return { x: c.x, y: b.y + b.h };
+  if (side === 'LEFT') return { x: b.x, y: c.y };
+  if (side === 'RIGHT') return { x: b.x + b.w, y: c.y };
+  return c;
+}
+
+/**
+ * Which way a leg runs where it meets waypoint `w`: arriving from `prev` (a node stop or a point)
+ * or leaving towards `next`. These are FigJam's own routes, which the plugin cannot read back,
+ * so they are computed from the rules the preview encodes (`layout.ts` `route`).
+ */
+function legDirection(lineType: string, w: Pt, other: Stop, arriving: boolean): Pt {
+  const straight = lineType === 'STRAIGHT';
+  const towardW = (from: Pt) => (arriving ? { x: w.x - from.x, y: w.y - from.y } : { x: from.x - w.x, y: from.y - w.y });
+  if ('point' in other) {
+    const v = towardW(other.point);
+    return straight ? unitOf(v) : axisOf(v);
+  }
+  const side = sideToward(other.node, other.side, w, straight);
+  const anchor = side === 'CENTER' ? centreOf(other.node) : sidePointOf(other.node, side);
+  if (straight) return unitOf(towardW(anchor));
+  if (lineType !== 'CURVED' || side === 'CENTER') return axisOf(towardW(anchor));
+  // A curve meets a point along the node side's axis when it ends there; starting there, it leaves
+  // along that axis unless the point is in front of the side and more beside it than in front.
+  const n = SIDE_DIR[side];
+  if (arriving) {
+    const a = (w.x - anchor.x) * n.x + (w.y - anchor.y) * n.y;
+    return { x: sgn(a) * n.x, y: sgn(a) * n.y };
+  }
+  const v = { x: w.x - anchor.x, y: w.y - anchor.y };
+  const a = v.x * n.x + v.y * n.y;
+  const beside = { x: v.x - a * n.x, y: v.y - a * n.y };
+  if (a < 0 || a >= Math.hypot(beside.x, beside.y)) return { x: -sgn(a) * n.x, y: -sgn(a) * n.y };
+  return { x: -Math.sign(beside.x), y: -Math.sign(beside.y) };
+}
+
+/**
+ * The rounded corner at the waypoint `stops[k]`, or null where the legs run straight on or double
+ * back. The radius is held to a quarter of each leg's run, measured to the neighbouring waypoint or
+ * the end node's centre (as the preview's `cornerAt` measures it).
+ */
+function cornerAt(n: any, stops: Stop[], k: number, w: Pt): Corner | null {
+  const lineType = toEnumValue(n.lineType) ?? 'ELBOWED';
+  const din = legDirection(lineType, w, stops[k - 1], true);
+  const dout = legDirection(lineType, w, stops[k + 1], false);
+  if (Math.abs(din.x * dout.y - din.y * dout.x) < 1e-6) return null;
+  const anchorOf = (s: Stop) => ('point' in s ? s.point : centreOf(s.node));
+  const prev = anchorOf(stops[k - 1]);
+  const next = anchorOf(stops[k + 1]);
+  const runIn = Math.abs((w.x - prev.x) * din.x + (w.y - prev.y) * din.y);
+  const runOut = Math.abs((next.x - w.x) * dout.x + (next.y - w.y) * dout.y);
+  const r = Math.min(CORNER_RADIUS, runIn / 4, runOut / 4);
+  if (r < 1) return null;
+  return { w, a: { x: w.x - din.x * r, y: w.y - din.y * r }, b: { x: w.x + dout.x * r, y: w.y + dout.y * r } };
+}
+
+/** A corner as a vector curve, styled exactly like the leg drawn just before it. */
+function drawCorner(k: Corner, leg: ConnectorNode, itemId: string): VectorNode {
+  const minX = Math.min(k.a.x, k.w.x, k.b.x);
+  const minY = Math.min(k.a.y, k.w.y, k.b.y);
+  const at = (p: Pt) => `${p.x - minX} ${p.y - minY}`;
+  const v = figma.createVector();
+  v.vectorPaths = [{ windingRule: 'NONE', data: `M ${at(k.a)} Q ${at(k.w)} ${at(k.b)}` }];
+  v.x = minX;
+  v.y = minY;
+  v.strokes = leg.strokes;
+  v.strokeWeight = leg.strokeWeight as number;
+  v.strokeCap = 'ROUND';
+  v.dashPattern = leg.dashPattern;
+  v.opacity = leg.opacity;
+  v.name = 'Connector corner';
+  tagNode(v, itemId);
+  return v;
 }
 
 async function drawConnector(
@@ -411,9 +542,9 @@ async function drawConnector(
   const toCap = toEnumValue(n.toCap);
   const fromSide = toEnumValue(n.fromSide);
   const toSide = toEnumValue(n.toSide);
-  const waypoints = waypointsOf(n);
   const created: SceneNode[] = [];
   for (const src of sources) {
+    const waypoints = waypointsOf(n, src);
     for (const tgt of targets) {
       if (src === tgt) continue;
       // FigJam has no waypoints: a routed connector is one connector per leg, the legs meeting
@@ -425,9 +556,18 @@ async function drawConnector(
       ];
       const legs = stops.length - 1;
       const labelled = Math.floor((legs - 1) / 2);
+      // Round each turn at a waypoint: the leg into it stops a radius short and the leg out starts
+      // a radius past, and a curve joins them with the waypoint as its unrounded corner.
+      const corners = (waypoints ?? []).map((w, j) => cornerAt(n, stops, j + 1, w));
       for (let i = 0; i < legs; i++) {
         const caps = { fromCap: i === 0 ? fromCap : 'NONE', toCap: i === legs - 1 ? toCap : 'NONE' };
-        created.push(await drawSegment(n, stops[i], stops[i + 1], caps, i === labelled ? label : '', itemId));
+        const before = i > 0 ? corners[i - 1] : null;
+        const after = i < legs - 1 ? corners[i] : null;
+        const a: Stop = before ? { point: before.b } : stops[i];
+        const b: Stop = after ? { point: after.a } : stops[i + 1];
+        const leg = await drawSegment(n, a, b, caps, i === labelled ? label : '', itemId);
+        created.push(leg);
+        if (after) created.push(drawCorner(after, leg, itemId));
       }
     }
   }
