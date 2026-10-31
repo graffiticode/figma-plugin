@@ -23,6 +23,7 @@
     .item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #f0f0f0; }
     .item:last-child { border-bottom: none; }
     .item-id { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+    .item-page { display: block; margin: 2px 0 6px 24px; width: calc(100% - 24px); padding: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
     .empty { color: #999; font-style: italic; padding: 12px 0; text-align: center; }
     #status { margin-top: 12px; font-size: 12px; color: #666; min-height: 20px; }
     .error { color: #dc2626; }
@@ -76,6 +77,8 @@
     let storedApiKey = '';
     let pollTimer = null;
     const lastDataJson = {}; // itemId -> json
+    // itemId -> { pages: [{id, name}], selected }: a positioned board's pages, chosen by id for this FigJam page.
+    const itemPages = {};
 
     function setApiKeyDisplay(key) {
       storedApiKey = key || '';
@@ -214,6 +217,36 @@
         li.appendChild(label);
         li.appendChild(actions);
         itemsEl.appendChild(li);
+
+        const choice = itemPages[item.id];
+        if (choice && choice.pages.length > 1) {
+          // Usable while watching: choosing a page binds it to this FigJam page and redraws.
+          const select = document.createElement('select');
+          select.className = 'item-page';
+          select.title = 'Board page drawn on this FigJam page';
+          if (choice.selected == null) {
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = 'Choose a page\u2026';
+            none.selected = true;
+            none.disabled = true;
+            select.appendChild(none);
+          }
+          for (const page of choice.pages) {
+            const opt = document.createElement('option');
+            opt.value = page.id;
+            opt.textContent = page.name + ' (' + page.id + ')';
+            opt.selected = page.id === choice.selected;
+            select.appendChild(opt);
+          }
+          select.addEventListener('change', () => {
+            choice.selected = select.value;
+            parent.postMessage({ pluginMessage: { type: 'bind-page', itemId: item.id, pageId: select.value } }, '*');
+          });
+          const row = document.createElement('li');
+          row.appendChild(select);
+          itemsEl.appendChild(row);
+        }
       });
     }
 
@@ -365,6 +398,8 @@
         return;
       }
 
+      // Watching again redraws, e.g. after switching to another FigJam page.
+      for (const id of Object.keys(lastDataJson)) delete lastDataJson[id];
       drawBtn.textContent = 'Stop';
       showClearDefault();
       renderItems();
@@ -382,6 +417,12 @@
       if (msg.type === 'init') {
         setApiKeyDisplay(msg.apiKey || '');
         items = Array.isArray(msg.items) ? msg.items : [];
+        renderItems();
+        return;
+      }
+
+      if (msg.type === 'pages') {
+        itemPages[msg.itemId] = { pages: msg.pages, selected: msg.selected };
         renderItems();
         return;
       }

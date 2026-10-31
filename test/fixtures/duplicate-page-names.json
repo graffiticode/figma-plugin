@@ -1,0 +1,122 @@
+{
+  "type": "board",
+  "positioned": 1,
+  "profile": "FIGJAM_V1",
+  "revision": {
+    "compiler": "0.1.0",
+    "font": "Inter-Medium 3.19 sha256:99dab2bdcb613c4c8264000a94351d1227f74dc95a86d1249493aeee0c0179c4",
+    "layout": "FIGJAM_V1"
+  },
+  "showPageTabs": true,
+  "showPageMenu": false,
+  "pages": [
+    {
+      "id": "week-1",
+      "name": "Notes",
+      "width": 240,
+      "height": 240,
+      "nodes": [
+        {
+          "type": "sticky",
+          "id": "first",
+          "x": 0,
+          "y": 0,
+          "width": 240,
+          "height": 240,
+          "wide": false,
+          "opacity": 100,
+          "text": "First page",
+          "fontSize": 24,
+          "lineHeight": 1.5,
+          "lines": [
+            {
+              "text": "First page",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 17,
+            "y": 24,
+            "w": 206,
+            "h": 192
+          }
+        }
+      ],
+      "groups": []
+    },
+    {
+      "id": "week-2",
+      "name": "Notes",
+      "width": 480,
+      "height": 346,
+      "nodes": [
+        {
+          "type": "sticky",
+          "id": "second",
+          "x": 0,
+          "y": 0,
+          "width": 240,
+          "height": 240,
+          "wide": false,
+          "opacity": 100,
+          "text": "Second page",
+          "fontSize": 24,
+          "lineHeight": 1.5,
+          "lines": [
+            {
+              "text": "Second page",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 17,
+            "y": 24,
+            "w": 206,
+            "h": 192
+          }
+        },
+        {
+          "type": "text",
+          "id": "caption",
+          "x": 0,
+          "y": 288,
+          "width": 480,
+          "height": 58,
+          "opacity": 100,
+          "text": "A textbox wide enough to wrap onto a second line in FigJam",
+          "fontSize": 24,
+          "lineHeight": 1.2083333333333333,
+          "lines": [
+            {
+              "text": "A textbox wide enough to wrap onto a",
+              "break": {
+                "kind": "soft",
+                "text": " "
+              }
+            },
+            {
+              "text": "second line in FigJam",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 0,
+            "y": 0,
+            "w": 480,
+            "h": 58
+          }
+        }
+      ],
+      "groups": []
+    }
+  ]
+}

@@ -158,7 +158,22 @@ function applyStroke(
   }
 }
 
-async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
+/**
+ * A positioned board (L0187, `positioned: 1`) is drawn exactly as given: the compiler has
+ * measured, sized and placed everything, so nothing is re-fitted, and a node's compiled `id` is
+ * kept in its plugin data.
+ */
+function isPositioned(data: any): boolean {
+  return !!data && data.positioned === 1;
+}
+
+async function drawNode(n: any, itemId: string, positioned = false): Promise<SceneNode | null> {
+  const node = await drawNodeOf(n, itemId, positioned);
+  if (node && positioned && n.id != null) node.setPluginData('nodeId', String(n.id));
+  return node;
+}
+
+async function drawNodeOf(n: any, itemId: string, positioned: boolean): Promise<SceneNode | null> {
   const x = n.x ?? 0;
   const y = n.y ?? 0;
 
@@ -176,7 +191,12 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
       applyFontSize(shape.text, n);
     }
     applyFill(shape, n);
-    applyStroke(shape, n);
+    if (positioned && !n.stroke) {
+      // The compiler always gives the weight; without a colour the shape keeps FigJam's own stroke.
+      if (n.strokeWidth != null) shape.strokeWeight = Number(n.strokeWidth);
+    } else {
+      applyStroke(shape, n);
+    }
     applyOpacity(shape, n);
     tagNode(shape, itemId);
     return shape;
@@ -184,6 +204,8 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
 
   if (n.type === 'sticky') {
     const sticky = figma.createSticky();
+    // A positioned sticky is FigJam's square or wide one, as the compiler sized it; FigJam grows its height.
+    if (positioned) sticky.isWideWidth = !!n.wide;
     sticky.x = x;
     sticky.y = y;
     if (n.text) {
@@ -205,6 +227,11 @@ async function drawNode(n: any, itemId: string): Promise<SceneNode | null> {
     t.y = y;
     if (n.text) t.characters = String(n.text);
     applyFontSize(t, n);
+    if (positioned && n.width != null) {
+      // The compiler wrapped the text at this width; FigJam wraps natively at it and grows the height.
+      t.resize(Number(n.width), t.height);
+      t.textAutoResize = 'HEIGHT';
+    }
     if (n.color) t.fills = [{ type: 'SOLID', color: resolveColor(n.color) }];
     applyOpacity(t, n);
     tagNode(t, itemId);
@@ -529,13 +556,27 @@ function drawCorner(k: Corner, leg: ConnectorNode, itemId: string): VectorNode {
   return v;
 }
 
+/**
+ * A positioned connector's end: exactly one sticky, shape or textbox, by its compiled id. There is
+ * no fallback to text, section names or stamps, and an id that is not on the page is an error.
+ */
+function endpointById(n: any, end: 'from' | 'to', lookup: Map<string, SceneNode>): SceneNode {
+  const id = String(n[end]);
+  const node = lookup.get(id);
+  if (!node) {
+    throw new Error('Connector "' + n.id + '" ' + end + ' "' + id + '": no sticky, shape or textbox with that id on this page.');
+  }
+  return node;
+}
+
 async function drawConnector(
   n: any,
   itemId: string,
   lookup: Map<string, SceneNode>,
+  positioned = false,
 ): Promise<SceneNode[]> {
-  const sources = resolveEndpoints(n.from, n.to, lookup);
-  const targets = resolveEndpoints(n.to, n.from, lookup);
+  const sources = positioned ? [endpointById(n, 'from', lookup)] : resolveEndpoints(n.from, n.to, lookup);
+  const targets = positioned ? [endpointById(n, 'to', lookup)] : resolveEndpoints(n.to, n.from, lookup);
   if (sources.length === 0 || targets.length === 0) return [];
   const label = n.label != null ? String(n.label) : '';
   const fromCap = toEnumValue(n.fromCap);
@@ -546,7 +587,8 @@ async function drawConnector(
   for (const src of sources) {
     const waypoints = waypointsOf(n, src);
     for (const tgt of targets) {
-      if (src === tgt) continue;
+      // A positioned self-loop is drawn as its compiler-placed waypoint legs, like any routed connector.
+      if (src === tgt && !positioned) continue;
       // FigJam has no waypoints: a routed connector is one connector per leg, the legs meeting
       // at fixed points on the page. Inner ends carry no cap.
       const stops: Stop[] = [
@@ -571,6 +613,7 @@ async function drawConnector(
       }
     }
   }
+  if (positioned && n.id != null) for (const c of created) c.setPluginData('nodeId', String(n.id));
   return created;
 }
 
@@ -595,12 +638,15 @@ async function renderNodeTree(
   itemId: string,
   lookup: Map<string, SceneNode>,
   connectors: any[],
+  positioned = false,
 ): Promise<SceneNode | null> {
   if (!n || typeof n !== 'object') return null;
   if (n.type === 'connector') {
     connectors.push(n);
     return null;
   }
+
+  if (positioned) return renderPositioned(n, itemId, lookup, connectors);
 
   if (n.type === 'section' && Array.isArray(n.nodes)) {
     // Render children first, then create the section sized to fit and
@@ -667,19 +713,131 @@ async function renderNodeTree(
 }
 
 /**
+ * A positioned node: every box is absolute and final. A section keeps its compiled box (no
+ * auto-fit, no re-centring) and its members their absolute places; only stickies, shapes and
+ * textboxes are registered as connector ends, by id.
+ */
+async function renderPositioned(
+  n: any,
+  itemId: string,
+  lookup: Map<string, SceneNode>,
+  connectors: any[],
+): Promise<SceneNode | null> {
+  if (n.type === 'section') {
+    const children: SceneNode[] = [];
+    for (const c of Array.isArray(n.nodes) ? n.nodes : []) {
+      const child = await renderNodeTree(c, itemId, lookup, connectors, true);
+      if (child) children.push(child);
+    }
+    const section = figma.createSection();
+    if (n.name) section.name = String(n.name);
+    applyFill(section as any, n);
+    applyOpacity(section, n);
+    const sx = Number(n.x ?? 0);
+    const sy = Number(n.y ?? 0);
+    section.x = sx;
+    section.y = sy;
+    section.resizeWithoutConstraints(Number(n.width ?? section.width), Number(n.height ?? section.height));
+    for (const c of children) {
+      const ax = c.x;
+      const ay = c.y;
+      section.appendChild(c);
+      c.x = ax - sx;
+      c.y = ay - sy;
+    }
+    tagNode(section, itemId);
+    if (n.id != null) section.setPluginData('nodeId', String(n.id));
+    return section;
+  }
+  const node = await drawNode(n, itemId, true);
+  if (node && (n.type === 'sticky' || n.type === 'shape' || n.type === 'text') && n.id != null) {
+    lookup.set(String(n.id), node);
+  }
+  return node;
+}
+
+// --- Page bindings (positioned boards) ---
+
+/**
+ * Which board page each watched item draws into a FigJam page: `{itemId: pageId}` in the FigJam
+ * page's plugin data, so two items sharing a native page keep their own selections.
+ */
+function pageBindings(page: PageNode = figma.currentPage): Record<string, string> {
+  const raw = page.getPluginData('gc-page-ids');
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setPageBinding(itemId: string, pageId: string | null, page: PageNode = figma.currentPage): void {
+  const bindings = pageBindings(page);
+  if (pageId == null) delete bindings[itemId];
+  else bindings[itemId] = pageId;
+  page.setPluginData('gc-page-ids', JSON.stringify(bindings));
+}
+
+type BoardPage = { id: string; name: string };
+
+type Picked = {
+  nodes: any[];
+  id?: string;
+  name?: string;
+  background?: string;
+  others: string[];
+  /** A positioned board's pages, for the UI's picker. */
+  pages?: BoardPage[];
+  /** Set when this FigJam page is bound to a page id the board no longer has. */
+  stale?: string;
+};
+
+/**
  * Which page of a board to draw here. An L0186 board has `pages`; an L0172 board has `nodes`.
  * The plugin API cannot create pages in FigJam, so one page is drawn into the current FigJam
  * page: the one whose name matches it, else the board's first page.
  */
-function pickPage(data: any): { nodes: any[]; name?: string; background?: string; others: string[] } {
+function pickPage(data: any, itemId: string): Picked {
   if (!Array.isArray(data.pages)) return { nodes: data.nodes || [], others: [] };
   const pages = data.pages.filter((p: any) => p && typeof p === 'object');
+  if (isPositioned(data)) return pickPositionedPage(pages, itemId);
   const page = pages.find((p: any) => p.name === figma.currentPage.name) || pages[0] || { nodes: [] };
   return {
     nodes: page.nodes || [],
     name: page.name,
     background: page.background,
     others: pages.filter((p: any) => p !== page).map((p: any) => String(p.name)),
+  };
+}
+
+/**
+ * A positioned board's pages are chosen by id, never by name (names may repeat). The page this
+ * FigJam page is bound to for the item, else the first; a binding to a page id the board no longer
+ * has is reported, never redirected to another page.
+ */
+function pickPositionedPage(pages: any[], itemId: string): Picked {
+  const list: BoardPage[] = pages.map((p: any) => ({ id: String(p.id), name: String(p.name ?? '') }));
+  const bound = pageBindings()[itemId];
+  const page = bound != null ? pages.find((p: any) => String(p.id) === bound) : pages[0];
+  if (!page) {
+    if (bound == null) return { nodes: [], others: [], pages: list };
+    return {
+      nodes: [],
+      others: [],
+      pages: list,
+      stale: 'This FigJam page was showing board page "' + bound + '" of ' + itemId
+        + ', which the board no longer has. Choose a page to draw here.',
+    };
+  }
+  return {
+    nodes: page.nodes || [],
+    id: String(page.id),
+    name: page.name,
+    background: page.background,
+    others: [],
+    pages: list,
   };
 }
 
@@ -692,9 +850,9 @@ function wrongFile(data: any): string | null {
     : 'This board is saved to FigJam file ' + data.fileKey + ', not this one. Open https://www.figma.com/board/' + data.fileKey + ' to draw it there.';
 }
 
-async function drawBoard(data: any, itemId: string): Promise<number> {
+async function drawBoard(data: any, itemId: string, page: Picked): Promise<number> {
   const created: SceneNode[] = [];
-  const page = pickPage(data);
+  const positioned = isPositioned(data);
   const nodes = page.nodes;
   if (page.background) {
     try {
@@ -705,11 +863,11 @@ async function drawBoard(data: any, itemId: string): Promise<number> {
   const connectors: any[] = [];
 
   for (const n of nodes) {
-    const rendered = await renderNodeTree(n, itemId, lookup, connectors);
+    const rendered = await renderNodeTree(n, itemId, lookup, connectors, positioned);
     if (rendered) created.push(rendered);
   }
   for (const n of connectors) {
-    const made = await drawConnector(n, itemId, lookup);
+    const made = await drawConnector(n, itemId, lookup, positioned);
     created.push(...made);
   }
 
@@ -722,7 +880,7 @@ async function drawBoard(data: any, itemId: string): Promise<number> {
 
 // --- Renderer registry ---
 
-type Renderer = (data: any, itemId: string) => Promise<number>;
+type Renderer = (data: any, itemId: string, page: Picked) => Promise<number>;
 
 function getRenderer(data: any): Renderer | null {
   if (data && data.type === 'board') {
@@ -760,6 +918,65 @@ figma.clientStorage.getAsync('apiKey').then((apiKey) => {
   });
 });
 
+/** The last board each item sent, so choosing another page redraws without a fetch. */
+const lastData: Record<string, any> = {};
+
+function postPages(itemId: string, page: Picked): void {
+  if (!page.pages || page.pages.length < 2) return;
+  figma.ui.postMessage({ type: 'pages', itemId, pages: page.pages, selected: page.id ?? null });
+}
+
+async function draw(itemId: string, data: any): Promise<void> {
+  const renderer = getRenderer(data);
+  if (!renderer) {
+    const keys = data && typeof data === 'object' ? Object.keys(data).join(', ') : typeof data;
+    figma.ui.postMessage({
+      type: 'error',
+      message: 'No renderer for ' + itemId + ' (got keys: ' + keys + ')',
+    });
+    return;
+  }
+  const wrong = wrongFile(data);
+  if (wrong) {
+    figma.ui.postMessage({ type: 'error', message: wrong });
+    return;
+  }
+  const page = pickPage(data, itemId);
+  if (page.stale) {
+    // Dropped, and the drawing left as it was: the user picks the page to draw instead.
+    setPageBinding(itemId, null);
+    postPages(itemId, page);
+    figma.ui.postMessage({ type: 'error', message: page.stale });
+    return;
+  }
+  removeOrphans();
+  removeNodesForItem(itemId);
+  let count: number;
+  try {
+    count = await renderer(data, itemId, page);
+  } catch (err) {
+    removeNodesForItem(itemId);
+    figma.ui.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  if (isPositioned(data) && page.id != null) setPageBinding(itemId, page.id);
+  postPages(itemId, page);
+  let note = '';
+  if (page.pages && page.pages.length > 1) {
+    note = ' (page "' + page.name + '", id "' + page.id + '")';
+  } else if (page.others.length) {
+    note = ' (page "' + page.name + '"; switch to a FigJam page named ' + page.others.map(n => '"' + n + '"').join(' or ') + ' and draw again for the others)';
+  }
+  figma.ui.postMessage({ type: 'draw-complete', itemId, count, note });
+}
+
+// On another FigJam page, the picker shows what that page is bound to (or the default).
+figma.on('currentpagechange', () => {
+  for (const itemId of Object.keys(lastData)) {
+    if (isPositioned(lastData[itemId])) postPages(itemId, pickPage(lastData[itemId], itemId));
+  }
+});
+
 figma.ui.onmessage = async (msg: any) => {
   if (msg.type === 'save-api-key') {
     if (msg.apiKey) { figma.clientStorage.setAsync('apiKey', msg.apiKey); }
@@ -770,27 +987,10 @@ figma.ui.onmessage = async (msg: any) => {
   } else if (msg.type === 'remove-item-nodes') {
     removeNodesForItem(msg.itemId);
   } else if (msg.type === 'draw') {
-    const renderer = getRenderer(msg.data);
-    if (!renderer) {
-      const keys = msg.data && typeof msg.data === 'object' ? Object.keys(msg.data).join(', ') : typeof msg.data;
-      figma.ui.postMessage({
-        type: 'error',
-        message: 'No renderer for ' + msg.itemId + ' (got keys: ' + keys + ')',
-      });
-      return;
-    }
-    const wrong = wrongFile(msg.data);
-    if (wrong) {
-      figma.ui.postMessage({ type: 'error', message: wrong });
-      return;
-    }
-    removeOrphans();
-    removeNodesForItem(msg.itemId);
-    const count = await renderer(msg.data, msg.itemId);
-    const page = pickPage(msg.data);
-    const note = page.others.length
-      ? ' (page "' + page.name + '"; switch to a FigJam page named ' + page.others.map(n => '"' + n + '"').join(' or ') + ' and draw again for the others)'
-      : '';
-    figma.ui.postMessage({ type: 'draw-complete', itemId: msg.itemId, count, note });
+    lastData[msg.itemId] = msg.data;
+    await draw(msg.itemId, msg.data);
+  } else if (msg.type === 'bind-page') {
+    setPageBinding(msg.itemId, String(msg.pageId));
+    if (lastData[msg.itemId]) await draw(msg.itemId, lastData[msg.itemId]);
   }
 };
