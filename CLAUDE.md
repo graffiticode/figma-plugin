@@ -10,7 +10,12 @@ npm run build:code     # TypeScript only → dist/code.js
 npm run build:ui       # Copy src/ui.html → dist/ui.html
 ```
 
-No test runner or linter is configured. TypeScript strict mode is enabled via `tsconfig.json`.
+npm test               # build, then node:test on test/*.test.mjs
+```
+
+The tests run the built `dist/code.js` in a VM against an in-memory `figma` (`test/figma-mock.mjs`)
+and draw compiled L0187 boards from `test/fixtures/` (see its README to refresh them). No linter is
+configured. TypeScript strict mode is enabled via `tsconfig.json`.
 
 ## Architecture
 
@@ -32,6 +37,23 @@ Communication flow: UI fetches JSON from Graffiticode API → sends `{type: 'dra
 
 - **L0186** (`graffiticode/languages/l0186`): `{type: "board", pages: [{name, background?, nodes}], fileKey?}`. FigJam's plugin API cannot create pages, so `pickPage` draws the page named like `figma.currentPage`, else the first. `fileKey` (from `save-to-figjam`) must match `figma.fileKey` when the plugin can read it (`wrongFile`).
 - **L0172** (legacy): `{type: "board", nodes, fileKey?}`.
+- **L0187** (`graffiticode/languages/l0187`): `{type: "board", positioned: 1, pages: [{id, name, nodes, …}], …}`.
+  The compiler has measured, sized, placed and routed everything, so a positioned board is drawn
+  exactly as given (`isPositioned`, every difference gated on it):
+  - connector ends are stickies, shapes and textboxes **by id only** (no text fallback; sections
+    and stamps are never ends); an unknown id is an error and the item's nodes are removed;
+  - self-loops are drawn (as their waypoint legs); every connector is straight legs between the
+    compiled `fromSide`/`toSide` magnets and `waypoints`;
+  - text gets its compiled `width` (`textAutoResize = "HEIGHT"`), stickies `isWideWidth` from `wide`,
+    shapes keep FigJam's stroke colour unless `stroke` is given;
+  - sections keep their compiled box, members their absolute places (no auto-fit, no re-centring);
+  - `route`, `lines`, `labelBox`, `content` are for the preview and ignored;
+  - pages are chosen **by id**: the FigJam page's plugin data `gc-page-ids` maps each item to its
+    board page (`{itemId: pageId}`), defaulting to the first; the UI shows a picker per item for
+    multi-page boards (`pages` / `bind-page` messages). A binding to a page id the board no longer
+    has is reported and dropped, never redirected. Positioned nodes carry `pluginData('nodeId')`.
+  The compiler models the plugin's label leg (`floor((legs − 1) / 2)`) and corner rounding — change
+  them only together with `languages/l0187/crates/core/src/route.rs`.
 
 Nodes: `sticky`, `shape`, `text`, `section` (children drawn first, section fitted to them + 24px and children centred), `stamp` (a 40px circle + emoji), `connector` (ends by `primaryKey`: id else text, a section's name, a stamp's reaction; lists and `"*"` fan out). L0186's SVG preview mirrors these placement rules in `languages/l0186/packages/view/src/lib/layout.ts` — **change both together**, or the preview stops matching what the plugin draws.
 

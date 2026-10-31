@@ -1,0 +1,226 @@
+{
+  "type": "board",
+  "positioned": 1,
+  "profile": "FIGJAM_V1",
+  "revision": {
+    "compiler": "0.1.0",
+    "font": "Inter-Medium 3.19 sha256:99dab2bdcb613c4c8264000a94351d1227f74dc95a86d1249493aeee0c0179c4",
+    "layout": "FIGJAM_V1"
+  },
+  "showPageTabs": false,
+  "showPageMenu": false,
+  "pages": [
+    {
+      "id": "p1",
+      "name": "Collision",
+      "width": 611,
+      "height": 371,
+      "nodes": [
+        {
+          "type": "section",
+          "id": "task-section",
+          "name": "task",
+          "opacity": 100,
+          "x": 0,
+          "y": 83,
+          "width": 288,
+          "height": 288,
+          "titleFrame": {
+            "x": 0,
+            "y": 49,
+            "w": 45,
+            "h": 28
+          },
+          "nodes": [
+            {
+              "type": "sticky",
+              "id": "intro",
+              "x": 24,
+              "y": 107,
+              "width": 240,
+              "height": 240,
+              "wide": false,
+              "opacity": 100,
+              "text": "Intro",
+              "fontSize": 24,
+              "lineHeight": 1.5,
+              "lines": [
+                {
+                  "text": "Intro",
+                  "break": {
+                    "kind": "end",
+                    "text": ""
+                  }
+                }
+              ],
+              "content": {
+                "x": 17,
+                "y": 24,
+                "w": 206,
+                "h": 192
+              }
+            }
+          ]
+        },
+        {
+          "type": "shape",
+          "id": "task",
+          "x": 386,
+          "y": 49,
+          "width": 176,
+          "height": 176,
+          "shapeType": "SQUARE",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "text": "Task",
+          "fontSize": 24,
+          "lineHeight": 1.5,
+          "lines": [
+            {
+              "text": "Task",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 18.039999999999992,
+            "y": 16,
+            "w": 139.92000000000002,
+            "h": 144
+          }
+        },
+        {
+          "type": "connector",
+          "id": "intro-task",
+          "from": "intro",
+          "to": "task",
+          "lineType": "straight",
+          "fromSide": "RIGHT",
+          "toSide": "LEFT",
+          "waypoints": [
+            {
+              "x": 325,
+              "y": 227
+            },
+            {
+              "x": 325,
+              "y": 137
+            }
+          ],
+          "fromCap": "NONE",
+          "toCap": "ARROW_LINES",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "fontSize": 16,
+          "label": "next",
+          "labelLines": [
+            {
+              "text": "next",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "route": [
+            {
+              "x": 264,
+              "y": 227
+            },
+            {
+              "x": 325,
+              "y": 227
+            },
+            {
+              "x": 325,
+              "y": 137
+            },
+            {
+              "x": 386,
+              "y": 137
+            }
+          ],
+          "labelLeg": 1,
+          "labelBox": {
+            "x": 300,
+            "y": 167.5,
+            "w": 50,
+            "h": 29
+          },
+          "routeKind": "elbow"
+        },
+        {
+          "type": "connector",
+          "id": "task-loop",
+          "from": "task",
+          "to": "task",
+          "lineType": "straight",
+          "fromSide": "TOP",
+          "toSide": "RIGHT",
+          "waypoints": [
+            {
+              "x": 474,
+              "y": 22
+            },
+            {
+              "x": 589,
+              "y": 22
+            },
+            {
+              "x": 589,
+              "y": 137
+            }
+          ],
+          "fromCap": "CIRCLE_FILLED",
+          "toCap": "TRIANGLE_FILLED",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "fontSize": 16,
+          "label": "retry",
+          "labelLines": [
+            {
+              "text": "retry",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "route": [
+            {
+              "x": 474,
+              "y": 49
+            },
+            {
+              "x": 474,
+              "y": 22
+            },
+            {
+              "x": 589,
+              "y": 22
+            },
+            {
+              "x": 589,
+              "y": 137
+            },
+            {
+              "x": 562,
+              "y": 137
+            }
+          ],
+          "labelLeg": 1,
+          "labelBox": {
+            "x": 505,
+            "y": 7.5,
+            "w": 53,
+            "h": 29
+          },
+          "routeKind": "loop"
+        }
+      ],
+      "groups": []
+    }
+  ]
+}

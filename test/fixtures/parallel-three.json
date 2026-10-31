@@ -1,0 +1,245 @@
+{
+  "type": "board",
+  "positioned": 1,
+  "profile": "FIGJAM_V1",
+  "revision": {
+    "compiler": "0.1.0",
+    "font": "Inter-Medium 3.19 sha256:99dab2bdcb613c4c8264000a94351d1227f74dc95a86d1249493aeee0c0179c4",
+    "layout": "FIGJAM_V1"
+  },
+  "showPageTabs": false,
+  "showPageMenu": false,
+  "pages": [
+    {
+      "id": "p1",
+      "name": "Parallel",
+      "width": 492,
+      "height": 340,
+      "nodes": [
+        {
+          "type": "shape",
+          "id": "client",
+          "x": 0,
+          "y": 70,
+          "width": 176,
+          "height": 176,
+          "shapeType": "SQUARE",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "text": "Client",
+          "fontSize": 24,
+          "lineHeight": 1.5,
+          "lines": [
+            {
+              "text": "Client",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 18.039999999999992,
+            "y": 16,
+            "w": 139.92000000000002,
+            "h": 144
+          }
+        },
+        {
+          "type": "shape",
+          "id": "server",
+          "x": 316,
+          "y": 70,
+          "width": 176,
+          "height": 176,
+          "shapeType": "SQUARE",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "text": "Server",
+          "fontSize": 24,
+          "lineHeight": 1.5,
+          "lines": [
+            {
+              "text": "Server",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "content": {
+            "x": 18.039999999999992,
+            "y": 16,
+            "w": 139.92000000000002,
+            "h": 144
+          }
+        },
+        {
+          "type": "connector",
+          "id": "req",
+          "from": "client",
+          "to": "server",
+          "lineType": "straight",
+          "fromSide": "RIGHT",
+          "toSide": "LEFT",
+          "waypoints": [],
+          "fromCap": "NONE",
+          "toCap": "ARROW_LINES",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "fontSize": 16,
+          "label": "request",
+          "labelLines": [
+            {
+              "text": "request",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "route": [
+            {
+              "x": 176,
+              "y": 158
+            },
+            {
+              "x": 316,
+              "y": 158
+            }
+          ],
+          "labelLeg": 0,
+          "labelBox": {
+            "x": 208.5,
+            "y": 143.5,
+            "w": 75,
+            "h": 29
+          },
+          "routeKind": "straight"
+        },
+        {
+          "type": "connector",
+          "id": "res",
+          "from": "server",
+          "to": "client",
+          "lineType": "straight",
+          "fromSide": "TOP",
+          "toSide": "TOP",
+          "waypoints": [
+            {
+              "x": 404,
+              "y": 22
+            },
+            {
+              "x": 88,
+              "y": 22
+            }
+          ],
+          "fromCap": "NONE",
+          "toCap": "ARROW_LINES",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "fontSize": 16,
+          "label": "response",
+          "labelLines": [
+            {
+              "text": "response",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "route": [
+            {
+              "x": 404,
+              "y": 70
+            },
+            {
+              "x": 404,
+              "y": 22
+            },
+            {
+              "x": 88,
+              "y": 22
+            },
+            {
+              "x": 88,
+              "y": 70
+            }
+          ],
+          "labelLeg": 1,
+          "labelBox": {
+            "x": 202.5,
+            "y": 7.5,
+            "w": 87,
+            "h": 29
+          },
+          "routeKind": "arc"
+        },
+        {
+          "type": "connector",
+          "id": "ping",
+          "from": "client",
+          "to": "server",
+          "lineType": "straight",
+          "fromSide": "BOTTOM",
+          "toSide": "BOTTOM",
+          "waypoints": [
+            {
+              "x": 88,
+              "y": 318
+            },
+            {
+              "x": 404,
+              "y": 318
+            }
+          ],
+          "fromCap": "NONE",
+          "toCap": "ARROW_LINES",
+          "lineStyle": "dashed",
+          "strokeWidth": 4,
+          "opacity": 100,
+          "fontSize": 16,
+          "label": "heartbeat",
+          "labelLines": [
+            {
+              "text": "heartbeat",
+              "break": {
+                "kind": "end",
+                "text": ""
+              }
+            }
+          ],
+          "route": [
+            {
+              "x": 88,
+              "y": 246
+            },
+            {
+              "x": 88,
+              "y": 318
+            },
+            {
+              "x": 404,
+              "y": 318
+            },
+            {
+              "x": 404,
+              "y": 246
+            }
+          ],
+          "labelLeg": 1,
+          "labelBox": {
+            "x": 200,
+            "y": 303.5,
+            "w": 92,
+            "h": 29
+          },
+          "routeKind": "arc"
+        }
+      ],
+      "groups": []
+    }
+  ]
+}
